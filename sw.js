@@ -1,5 +1,5 @@
-/* Portal Karir app cache worker — version 20261119-mitra-recruitment-01. */
-const BUILD = '20261119-mitra-recruitment-01';
+/* Portal Karir app cache worker — version 20261119-mitra-recruitment-02. */
+const BUILD = '20261119-mitra-recruitment-02';
 const APP_ASSET_CACHE = `portal-karir-app-assets-${BUILD}`;
 const APP_CACHE_PREFIXES = ['portal-karir-app-assets-', 'portal-karir-app-shell-'];
 

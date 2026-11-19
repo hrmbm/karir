@@ -1,6 +1,6 @@
 import { supabase, isConfigured } from './supabase.js';
 import { SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, TEMPLATE_URL } from './config.js';
-import { $, $$, esc, idDate, stageUrl } from './common.js';
+import { $, $$, esc, idDate, stageUrl } from './common.js?v=20261119-stage2-table-tools-01';
 import { printApplication } from './print.js';
 import { computeDisc } from './disc-engine.js';
 
@@ -15,6 +15,7 @@ let currentUserId = null;
 let printTemplates = [];
 let editingEmployeeId = null;
 let hiringApplicantId = null;
+let editingApplicantId = null;
 
 const TITLES = {
   dashboard: 'Dashboard', stage1: 'Rekrutmen Tahap 1', stage2: 'Rekrutmen Tahap 2',
@@ -182,7 +183,7 @@ function stage1RowsHtml(rows,keys){
   return `<tr><td><b>${esc(row.full_name)}</b></td><td>${esc(row.position)}</td><td>${esc(row.city||'—')}</td>
    <td>${esc(row.district||'—')}</td><td>${esc(row.whatsapp||'—')}</td>
    ${keys.map(key=>`<td>${esc(displayApplicationValue(details[key]))}</td>`).join('')}
-   <td><span class="status-pill blue">${esc(row.status||'received')}</span></td><td>${esc(idDate(row.created_at))}</td>
+   <td><span class="status-pill blue">${esc(row.status||'received')}</span></td><td data-sort-value="${esc(row.created_at||'')}">${esc(idDate(row.created_at))}</td>
    <td><button class="icon-btn" data-stage1-cv="${esc(row.id)}">Lihat CV</button></td>
    <td><div class="row-actions"><button class="icon-btn" data-stage1-wa="${esc(row.id)}">Kirim Tahap 2</button>
    <button class="icon-btn" data-stage1-status="${esc(row.id)}">Tandai ditinjau</button></div></td></tr>`;
@@ -266,7 +267,8 @@ function stage2RowHtml(row,keys){
    <option value="pending" ${(row.background_check_status||'pending')==='pending'?'selected':''}>Menunggu</option>
    <option value="passed" ${row.background_check_status==='passed'?'selected':''}>Lolos</option>
    <option value="failed" ${row.background_check_status==='failed'?'selected':''}>Tidak lolos</option>
-  </select></td><td><button class="icon-btn" data-bg-check="${esc(row.id)}">Simpan kelayakan DISC</button></td></tr>`;
+  </select></td><td><div class="row-actions stage2-actions"><button class="icon-btn" data-bg-check="${esc(row.id)}">Simpan kelayakan DISC</button>
+   <button class="icon-btn" data-stage2-edit="${esc(row.id)}">Edit</button><button class="icon-btn danger" data-stage2-delete="${esc(row.id)}">Hapus</button></div></td></tr>`;
 }
 function bindStage2DocumentActions(){
  const bind=(selector,bucket,pathKey,label,datasetKey)=>{
@@ -301,7 +303,7 @@ async function savePositionList(positions){
  if(error)throw error;
 }
 function positionManagerHtml(positions){
- return `<section class="panel position-manager"><div class="panel-head"><div><h3>Daftar posisi yang tersedia</h3><p>Perubahan digunakan oleh dropdown di /form dan /apply.</p></div></div>
+ return `<section class="panel position-manager"><div class="panel-head"><div><h3>Daftar Lowongan</h3><p>Perubahan digunakan oleh pilihan posisi di /form dan /apply.</p></div></div>
   <div class="position-manager-body"><div id="position-rows">${positions.map((position,index)=>`<div class="position-row"><input class="input" maxlength="100" data-position-index="${index}" value="${esc(position)}" aria-label="Nama posisi ${index+1}"><button type="button" class="icon-btn" data-position-delete="${index}" ${positions.length===1?'disabled':''}>Hapus</button></div>`).join('')}</div>
   <div class="position-add-row"><input class="input" id="new-position" maxlength="100" placeholder="Nama posisi baru"><button type="button" class="btn btn-secondary" id="add-position">Tambah posisi</button></div>
   <div class="position-manager-foot"><small>Nama posisi akan menjadi pilihan resmi kandidat.</small><button type="button" class="btn btn-primary" id="save-positions">Simpan daftar posisi</button></div></div></section>`;
@@ -324,21 +326,137 @@ function bindPositionManager(positions){
   try{await savePositionList(values);say('Daftar posisi diperbarui.');loadView('stage2');}catch(error){say(error.message||'Daftar posisi gagal disimpan.');}
  });
 }
+function candidateEditFieldsHtml(applicant) {
+ const data=applicant.application_data||{};
+ const ignored=new Set(['nama','nik','posisi','ktp_foto','ktp_path']);
+ return Object.entries(data).filter(([key])=>!ignored.has(key)&&!key.startsWith('__')).map(([key,value])=>{
+  const label=applicationFieldLabel(key);
+  if(typeof value==='boolean') return `<label class="candidate-edit-field">${esc(label)}<select class="select" data-candidate-data-key="${esc(key)}" data-candidate-data-kind="boolean"><option value="true" ${value?'selected':''}>Ya</option><option value="false" ${!value?'selected':''}>Tidak</option></select></label>`;
+  if(typeof value==='number') return `<label class="candidate-edit-field">${esc(label)}<input class="input" type="number" step="any" data-candidate-data-key="${esc(key)}" data-candidate-data-kind="number" value="${esc(value)}"></label>`;
+  if(value && typeof value==='object') return `<label class="candidate-edit-field candidate-edit-field-wide">${esc(label)}<textarea class="textarea" rows="3" data-candidate-data-key="${esc(key)}" data-candidate-data-kind="json">${esc(JSON.stringify(value,null,2))}</textarea><small>Format JSON — array dan objek akan disimpan sesuai struktur aslinya.</small></label>`;
+  if(value===null) return `<label class="candidate-edit-field">${esc(label)}<input class="input" data-candidate-data-key="${esc(key)}" data-candidate-data-kind="null" value="" placeholder="Kosong / null"></label>`;
+  return `<label class="candidate-edit-field candidate-edit-field-wide">${esc(label)}<textarea class="textarea" rows="2" data-candidate-data-key="${esc(key)}" data-candidate-data-kind="string">${esc(value??'')}</textarea></label>`;
+ }).join('');
+}
+
+function candidateEditModal() {
+ let modal=$('#candidate-edit-modal');
+ if(modal)return modal;
+ modal=document.createElement('div');
+ modal.id='candidate-edit-modal';modal.className='modal-backdrop hidden';
+ modal.innerHTML=`<section class="employee-modal-card candidate-edit-card" role="dialog" aria-modal="true" aria-labelledby="candidate-edit-title">
+  <div class="employee-modal-head"><div><small>REKRUTMEN TAHAP 2</small><h2 id="candidate-edit-title">Edit data kandidat</h2></div><button type="button" class="modal-close" id="candidate-edit-close" aria-label="Tutup">×</button></div>
+  <form id="candidate-edit-form">
+   <div class="candidate-edit-basic-grid">
+    <label>Nama lengkap<input class="input" data-candidate-basic="full_name" required minlength="2" maxlength="120"></label>
+    <label>NIK<input class="input" data-candidate-basic="nik" required inputmode="numeric" maxlength="16" pattern="[0-9]{16}"></label>
+    <label class="candidate-edit-field-wide">Posisi dilamar<input class="input" data-candidate-basic="position" required maxlength="160"></label>
+   </div>
+   <div class="candidate-edit-divider"><b>Data formulir Tahap 2</b><span>Perubahan disimpan ke data lamaran kandidat.</span></div>
+   <div id="candidate-edit-fields" class="candidate-edit-fields"></div>
+   <div id="candidate-edit-error" class="form-error" role="alert"></div>
+   <div class="employee-modal-actions"><button type="button" class="btn btn-secondary" id="candidate-edit-cancel">Batal</button><button type="submit" class="btn btn-primary" id="candidate-edit-save">Simpan perubahan</button></div>
+  </form>
+ </section>`;
+ document.body.append(modal);
+ const close=()=>{modal.classList.add('hidden');editingApplicantId=null;};
+ $('#candidate-edit-close',modal).addEventListener('click',close);
+ $('#candidate-edit-cancel',modal).addEventListener('click',close);
+ modal.addEventListener('click',event=>{if(event.target===modal)close();});
+ $('#candidate-edit-form',modal).addEventListener('submit',saveStage2Candidate);
+ return modal;
+}
+
+function openStage2CandidateEditor(applicant) {
+ const modal=candidateEditModal(),form=$('#candidate-edit-form',modal);
+ form.reset();editingApplicantId=applicant.id;
+ form.querySelector('[data-candidate-basic="full_name"]').value=applicant.full_name||'';
+ form.querySelector('[data-candidate-basic="nik"]').value=applicant.nik||'';
+ form.querySelector('[data-candidate-basic="position"]').value=applicant.position||'';
+ $('#candidate-edit-title',modal).textContent=`Edit kandidat · ${applicant.full_name||'Tanpa nama'}`;
+ $('#candidate-edit-fields',modal).innerHTML=candidateEditFieldsHtml(applicant)||'<p class="subtle">Tidak ada field tambahan pada formulir ini.</p>';
+ $('#candidate-edit-error',modal).textContent='';
+ modal.classList.remove('hidden');
+ form.querySelector('[data-candidate-basic="full_name"]').focus();
+}
+
+async function saveStage2Candidate(event) {
+ event.preventDefault();
+ const form=event.currentTarget,modal=$('#candidate-edit-modal'),errorBox=$('#candidate-edit-error',modal),save=$('#candidate-edit-save',modal);
+ const applicant=applicants.find(item=>item.id===editingApplicantId);
+ if(!applicant){errorBox.textContent='Data kandidat tidak ditemukan. Muat ulang halaman.';return;}
+ const fullName=form.querySelector('[data-candidate-basic="full_name"]').value.trim();
+ const nik=form.querySelector('[data-candidate-basic="nik"]').value.replace(/\D/g,'');
+ const position=form.querySelector('[data-candidate-basic="position"]').value.trim();
+ if(fullName.length<2){errorBox.textContent='Nama lengkap minimal 2 karakter.';return;}
+ if(!/^\d{16}$/.test(nik)){errorBox.textContent='NIK harus tepat 16 angka.';return;}
+ if(!position){errorBox.textContent='Posisi dilamar wajib diisi.';return;}
+ if(applicants.some(item=>item.id!==applicant.id&&item.nik===nik)){errorBox.textContent='NIK tersebut sudah digunakan kandidat lain.';return;}
+ const nextData={...(applicant.application_data||{})};
+ try{
+  form.querySelectorAll('[data-candidate-data-key]').forEach(field=>{
+   const key=field.dataset.candidateDataKey,kind=field.dataset.candidateDataKind,value=field.value;
+   if(kind==='boolean')nextData[key]=value==='true';
+   else if(kind==='number')nextData[key]=value.trim()===''?null:Number(value);
+   else if(kind==='json')nextData[key]=JSON.parse(value);
+   else if(kind==='null')nextData[key]=value.trim()===''?null:value;
+   else nextData[key]=value;
+  });
+ }catch(parseError){errorBox.textContent=`Periksa format JSON: ${parseError.message}`;return;}
+ nextData.nama=fullName;nextData.nik=nik;nextData.posisi=position;
+ errorBox.textContent='';save.disabled=true;save.textContent='Menyimpan…';
+ try{
+  const {error}=await supabase.from('applicants').update({full_name:fullName,nik,position,application_data:nextData,updated_at:new Date().toISOString()}).eq('id',applicant.id);
+  if(error)throw error;
+  say(`Data ${fullName} berhasil diperbarui.`);
+  modal.classList.add('hidden');editingApplicantId=null;
+  await loadView('stage2');
+ }catch(saveError){errorBox.textContent=saveError.message||'Data kandidat gagal disimpan.';}
+ finally{save.disabled=false;save.textContent='Simpan perubahan';}
+}
+
+function bindStage2CandidateActions() {
+ $$('[data-stage2-edit]').forEach(button=>button.addEventListener('click',()=>{
+  const applicant=applicants.find(item=>item.id===button.dataset.stage2Edit);
+  if(applicant)openStage2CandidateEditor(applicant);
+ }));
+ $$('[data-stage2-delete]').forEach(button=>button.addEventListener('click',async()=>{
+  const applicant=applicants.find(item=>item.id===button.dataset.stage2Delete);
+  if(!applicant)return;
+  if(employees.some(employee=>employee.applicant_id===applicant.id)){
+   say('Kandidat sudah terhubung dengan Tracking Karyawan. Hapus atau kelola data karyawan terlebih dahulu agar riwayat tetap aman.');return;
+  }
+  const confirmed=window.confirm(`Hapus kandidat ${applicant.full_name} (NIK ${applicant.nik})? Data formulir dan jawaban DISC terkait juga akan dihapus. Tindakan ini tidak dapat dibatalkan.`);
+  if(!confirmed)return;
+  button.disabled=true;button.textContent='Menghapus…';
+  try{
+   const {error}=await supabase.from('applicants').delete().eq('id',applicant.id);
+   if(error)throw error;
+   applicants=applicants.filter(item=>item.id!==applicant.id);
+   const cleanupErrors=[];
+   if(applicant.cv_path){const result=await supabase.storage.from('candidate-files').remove([applicant.cv_path]);if(result.error)cleanupErrors.push('CV');}
+   if(applicant.ktp_path){const result=await supabase.storage.from('candidate-identity').remove([applicant.ktp_path]);if(result.error)cleanupErrors.push('KTP');}
+   say(cleanupErrors.length?`Kandidat terhapus. Berkas ${cleanupErrors.join(' dan ')} perlu dibersihkan melalui Storage.`:`Kandidat ${applicant.full_name} berhasil dihapus.`);
+   await loadView('stage2');
+  }catch(error){button.disabled=false;button.textContent='Hapus';say(error.message||'Kandidat gagal dihapus.');}
+ }));
+}
+
 async function renderStage2(){
  const allRows=applicants.filter(row=>row.stage!=='stage1_pending'&&row.stage!=='rejected');
  const positions=await loadPositionList(),keys=stage2FieldKeys(allRows);
  const renderRows=rows=>rows.length?rows.map(row=>stage2RowHtml(row,keys)).join(''):emptyRow(7+keys.length,'Belum ada formulir Tahap 2');
  const columns=['KANDIDAT','POSISI',...keys.map(key=>applicationFieldLabel(key).toLocaleUpperCase('id')),'FOTO KTP','CV','STATUS FORM','BACKGROUND CHECK','AKSI'];
  content.innerHTML=header('Rekrutmen Tahap 2','Seluruh field tersimpan, lampiran KTP/CV, dan kelayakan DISC · NIK adalah identitas utama')+
-  positionManagerHtml(positions)+
-  `<section class="panel table-panel">${tableToolbar('Cari nama / NIK / posisi / data lain…')}
-   <div class="table-wrap recruitment-data-scroll"><table class="data-table recruitment-wide-table"><thead><tr>${columns.map(label=>`<th>${esc(label)}</th>`).join('')}</tr></thead><tbody id="candidate-rows">${renderRows(allRows)}</tbody></table></div></section>`;
+  `<section class="panel table-panel stage2-candidate-panel">${tableToolbar('Cari nama / NIK / posisi / data lain…')}
+   <div class="table-wrap recruitment-data-scroll"><table class="data-table recruitment-wide-table"><thead><tr>${columns.map(label=>`<th>${esc(label)}</th>`).join('')}</tr></thead><tbody id="candidate-rows">${renderRows(allRows)}</tbody></table></div></section>`+
+  positionManagerHtml(positions);
  bindPositionManager(positions);
  const repaint=query=>{
   const filtered=allRows.filter(row=>`${row.full_name} ${row.nik} ${row.position} ${JSON.stringify(row.application_data||{})}`.toLocaleLowerCase('id').includes(query));
-  $('#candidate-rows').innerHTML=renderRows(filtered);bindBackgroundCheck();bindStage2DocumentActions();
+  $('#candidate-rows').innerHTML=renderRows(filtered);bindBackgroundCheck();bindStage2DocumentActions();bindStage2CandidateActions();
  };
- bindSearch('#table-search',repaint);bindBackgroundCheck();bindStage2DocumentActions();
+ bindSearch('#table-search',repaint);bindBackgroundCheck();bindStage2DocumentActions();bindStage2CandidateActions();
 }
 
 function renderStage3(){
@@ -363,7 +481,7 @@ function employeeRows(rows) {
       <td>${esc(employee.employee_no)}</td><td>${esc(employee.department || '—')}</td>
       <td>${esc(employee.position || applicant?.position || '—')}</td>
       <td><span class="status-pill ${employee.employment_status === 'Nonaktif' ? 'gray' : 'green'}">${esc(employee.employment_status)}</span></td>
-      <td>${idDate(employee.join_date)}</td><td><button class="icon-btn" data-edit-employee="${esc(employee.id)}">Edit</button></td>
+      <td data-sort-value="${esc(employee.join_date||'')}">${idDate(employee.join_date)}</td><td><button class="icon-btn" data-edit-employee="${esc(employee.id)}">Edit</button></td>
     </tr>`;
   }).join('');
 }
@@ -414,7 +532,7 @@ function templateManagerHtml(migrationError = null) {
   const currentName = active?.source_filename || 'Master bawaan repository';
   const history = printTemplates.length ? printTemplates.map(template => `<tr>
     <td><b>${esc(template.source_filename)}</b><small class="table-subline">${esc(template.schema_version || '—')}</small></td>
-    <td>${idDate(template.created_at)}</td>
+    <td data-sort-value="${esc(template.created_at||'')}">${idDate(template.created_at)}</td>
     <td>${template.is_active ? '<span class="status-pill green">Aktif</span>' : '<span class="status-pill gray">Arsip</span>'}</td>
     <td>${template.is_active ? '' : `<button class="icon-btn" data-template-activate="${esc(template.id)}">Jadikan aktif</button>`}</td>
   </tr>`).join('') : emptyRow(4, 'Belum ada versi master tambahan. Master bawaan tetap digunakan.');

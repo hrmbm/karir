@@ -1,6 +1,6 @@
 import { supabase, isConfigured } from './supabase.js?v=20261116-manual-default-07';
 import { MAX_CV_BYTES, CV_BUCKET, CV_PATH_PREFIX } from './config.js?v=20261116-manual-default-07';
-import { $, esc, ageFrom, cacheCandidateNik, setBusy } from './common.js?v=20261117-candidate-nik-01';
+import { $, esc, ageFrom, cacheCandidateNik, setBusy } from './common.js?v=20261119-stage2-table-tools-01';
 import { extractKtpText, formatKtpAddress } from './ktp-ocr.js?v=20261116-manual-default-07';
 import { recognizeWithPaddle } from './ocr-engine.js?v=20261116-manual-default-07';
 

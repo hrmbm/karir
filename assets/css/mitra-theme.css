@@ -238,3 +238,35 @@ body.candidate-page{background:var(--cream);color:var(--text)}
   .disc-pick{min-width:40px;min-height:40px}
   .disc-column-head span{font-size:8px;padding:7px 6px}
 }
+
+
+/* Tabel frontend: header tetap terlihat saat scroll dan dapat diurutkan. */
+.table-wrap,.recruitment-data-scroll,.ocr-map-table-wrap{position:relative;max-height:min(68vh,760px);overflow:auto;overscroll-behavior:contain}
+.data-table thead th,table thead th{position:sticky;top:0;z-index:8;background:#f1f6f3;box-shadow:0 1px 0 #dce7e1;cursor:pointer;user-select:none}
+.data-table thead th::after,table thead th::after{content:'↕';display:inline-block;margin-left:8px;color:#91a39d;font-size:11px;font-weight:800;opacity:.72}
+.data-table thead th[data-sort-direction="asc"]::after,table thead th[data-sort-direction="asc"]::after{content:'↑';color:var(--teal);opacity:1}
+.data-table thead th[data-sort-direction="desc"]::after,table thead th[data-sort-direction="desc"]::after{content:'↓';color:var(--teal);opacity:1}
+.data-table thead th:hover,table thead th:hover{background:#e7f0eb}
+.stage2-actions{flex-wrap:wrap;min-width:225px}
+.stage2-actions .danger{color:#b53d32;border-color:#efd0ca}
+.stage2-actions .danger:hover{background:#fff0ed;border-color:#e8b7ad}
+.stage2-candidate-panel{margin-top:0;margin-bottom:18px}
+.stage2-candidate-panel .table-wrap{border-radius:0 0 14px 14px}
+.candidate-edit-card{width:min(980px,100%);max-height:min(92vh,920px)}
+.candidate-edit-basic-grid{display:grid;grid-template-columns:1.3fr 1fr 1.2fr;gap:12px;padding:14px 0 18px}
+.candidate-edit-basic-grid label,.candidate-edit-field{display:block;min-width:0;font-size:10px;font-weight:800;color:#39555d}
+.candidate-edit-basic-grid .input,.candidate-edit-field .input,.candidate-edit-field .select,.candidate-edit-field .textarea{display:block;width:100%;margin-top:6px;padding:9px 10px;font-size:12px}
+.candidate-edit-divider{display:flex;align-items:baseline;gap:12px;padding:14px 0 10px;border-top:1px solid var(--line);color:var(--teal-dark)}
+.candidate-edit-divider b{font-size:12px}.candidate-edit-divider span,.candidate-edit-field small{font-size:10px;color:var(--muted);font-weight:400}
+.candidate-edit-fields{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px 14px;max-height:50vh;overflow:auto;padding:4px 3px 10px 0}
+.candidate-edit-field-wide{grid-column:1/-1}
+.candidate-edit-field .textarea{resize:vertical;line-height:1.45}
+.candidate-edit-field small{display:block;margin-top:4px}
+#candidate-edit-error{margin-top:10px}
+@media(max-width:720px){
+ .table-wrap,.recruitment-data-scroll{max-height:65vh}
+ .candidate-edit-basic-grid,.candidate-edit-fields{grid-template-columns:1fr}
+ .candidate-edit-field-wide{grid-column:auto}
+ .candidate-edit-divider{align-items:flex-start;flex-direction:column;gap:3px}
+ .candidate-edit-card{padding:18px}
+}

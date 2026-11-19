@@ -44,3 +44,55 @@ export function setBusy(button, busy, label='Memproses…') {
   if (busy) { button.dataset.oldText = button.textContent; button.textContent = label; button.disabled = true; }
   else { button.textContent = button.dataset.oldText || button.textContent; button.disabled = false; }
 }
+
+
+// Header tabel dapat diklik untuk mengurutkan baris naik/turun.
+// Listener delegasi ini juga menangani tabel yang dirender ulang secara dinamis.
+if (typeof document !== 'undefined' && !window.__portalTableSortingInstalled) {
+  window.__portalTableSortingInstalled = true;
+  const tableSortCollator = new Intl.Collator('id', { numeric: true, sensitivity: 'base' });
+  document.addEventListener('click', event => {
+    const header = event.target.closest('table thead th');
+    if (!header || header.dataset.sortable === 'false') return;
+    const table = header.closest('table');
+    const body = table?.tBodies?.[0];
+    if (!body) return;
+
+    const dataRows = [...body.rows].filter(row => !row.querySelector('.table-empty'));
+    const emptyRows = [...body.rows].filter(row => row.querySelector('.table-empty'));
+    if (dataRows.length < 2) return;
+
+    const columnIndex = header.cellIndex;
+    const direction = header.dataset.sortDirection === 'asc' ? 'desc' : 'asc';
+    const multiplier = direction === 'asc' ? 1 : -1;
+    const getValue = row => {
+      const cell = row.cells[columnIndex];
+      if (!cell) return '';
+      const raw = (cell.dataset.sortValue ?? cell.innerText ?? cell.textContent ?? '').trim().replace(/\s+/g, ' ');
+      return raw === '—' ? '' : raw;
+    };
+    const comparable = value => {
+      if (/^-?\d+(?:[.,]\d+)?%?$/.test(value)) return { type: 'number', value: Number(value.replace(',', '.').replace('%', '')) };
+      if (/^\d{4}-\d{2}-\d{2}(?:T.*)?$/.test(value)) return { type: 'date', value: Date.parse(value) };
+      return { type: 'text', value };
+    };
+    dataRows.sort((rowA, rowB) => {
+      const valueA = getValue(rowA);
+      const valueB = getValue(rowB);
+      if (!valueA && !valueB) return 0;
+      if (!valueA) return 1;
+      if (!valueB) return -1;
+      const a = comparable(valueA), b = comparable(valueB);
+      if (a.type === b.type && a.type !== 'text') return (a.value - b.value) * multiplier;
+      return tableSortCollator.compare(valueA, valueB) * multiplier;
+    });
+
+    table.querySelectorAll('thead th').forEach(th => {
+      delete th.dataset.sortDirection;
+      th.removeAttribute('aria-sort');
+    });
+    header.dataset.sortDirection = direction;
+    header.setAttribute('aria-sort', direction === 'asc' ? 'ascending' : 'descending');
+    [...dataRows, ...emptyRows].forEach(row => body.append(row));
+  });
+}
