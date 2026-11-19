@@ -254,7 +254,7 @@ async function handleAddressRegionChange(form,name){
 }
 function renderAddress(values={}){
   const different=String(values.domisili_berbeda||'false')==='true' || (!!values.domisili && !!values.alamat_asal && values.domisili!==values.alamat_asal);
-  return sectionHtml('⌖','ALAMAT SESUAI KTP',`${basicGrid(addressFields,values)}<input type="hidden" name="alamat_provinsi_id" value="${esc(values.alamat_provinsi_id||'')}"><input type="hidden" name="alamat_kota_id" value="${esc(values.alamat_kota_id||'')}"><input type="hidden" name="alamat_kota_jenis" value="${esc(values.alamat_kota_jenis||'Kabupaten')}"><input type="hidden" name="alamat_kecamatan_id" value="${esc(values.alamat_kecamatan_id||'')}"><input type="hidden" name="alamat_desa_id" value="${esc(values.alamat_desa_id||'')}"><input type="hidden" name="alamat_wilayah_type" value="${esc(values.alamat_wilayah_type||'')}"><input type="hidden" name="alamat_asal" value="${esc(values.alamat_asal||'')}"><div class="address-preview" id="address-preview"></div><small id="address-region-status" class="field-hint" aria-live="polite">Pilih provinsi terlebih dahulu; wilayah berikutnya dimuat sesuai pilihan.</small><label class="inline-toggle"><input type="checkbox" name="domisili_berbeda" value="true" ${different?'checked':''}><span>Alamat domisili berbeda</span></label><div class="conditional-fields" data-conditional="true" data-block="domicile" ${different?'':'hidden'}>${basicGrid([{name:'domisili',label:'Alamat domisili',type:'textarea',wide:true}],values)}</div>`);
+  return sectionHtml('⌖','ALAMAT SESUAI KTP',`${basicGrid(addressFields,values)}<input type="hidden" name="alamat_provinsi_id" value="${esc(values.alamat_provinsi_id||'')}"><input type="hidden" name="alamat_kota_id" value="${esc(values.alamat_kota_id||'')}"><input type="hidden" name="alamat_kota_jenis" value="${esc(values.alamat_kota_jenis||'Kabupaten')}"><input type="hidden" name="alamat_kecamatan_id" value="${esc(values.alamat_kecamatan_id||'')}"><input type="hidden" name="alamat_desa_id" value="${esc(values.alamat_desa_id||'')}"><input type="hidden" name="alamat_wilayah_type" value="${esc(values.alamat_wilayah_type||'')}"><input type="hidden" name="alamat_asal" value="${esc(values.alamat_asal||'')}"><div class="address-preview" id="address-preview"></div><label class="inline-toggle"><input type="checkbox" name="domisili_berbeda" value="true" ${different?'checked':''}><span>Alamat domisili berbeda</span></label><div class="conditional-fields" data-conditional="true" data-block="domicile" ${different?'':'hidden'}>${basicGrid([{name:'domisili',label:'Alamat domisili',type:'textarea',wide:true}],values)}</div>`);
 }
 function renderFamily(values={}){
   const siblingCount=Math.min(3,Math.max(0,Number(values.saudara_count??0)));
@@ -328,24 +328,24 @@ function renderOcrMappingPanel(data){
   const village=[data.alamat_wilayah_type,data.alamat_desa].filter(Boolean).join(' ');
   const city=[data.alamat_kota_jenis,data.alamat_kota_nama].filter(Boolean).join(' ');
   const rows=[
-    ['NIK','Data pribadi → nik',data.nik],
-    ['NAMA','Data pribadi → nama',data.nama],
-    ['TEMPAT / TGL LAHIR','Data pribadi → tempat_lahir + tanggal_lahir',ttl],
-    ['JENIS KELAMIN','Data pribadi → gender',gender],
-    ['ALAMAT','Alamat KTP → alamat_tipe + alamat_jalan',street],
-    ['RT / RW','Alamat KTP → alamat_rt + alamat_rw',rtRw],
-    ['DESA / KELURAHAN','Alamat KTP → alamat_wilayah_type + alamat_desa',village],
-    ['KECAMATAN','Alamat KTP → alamat_kecamatan',data.alamat_kecamatan],
-    ['KABUPATEN / KOTA','Alamat KTP → alamat_kota_jenis + alamat_kota_nama',city],
-    ['PROVINSI','Alamat KTP → alamat_provinsi',data.alamat_provinsi],
-    ['AGAMA','Data pribadi → agama',data.agama],
-    ['STATUS PERKAWINAN','Data keluarga → status_kawin',data.status_kawin],
-    ['KEWARGANEGARAAN','Data pribadi → warga_negara',data.warga_negara],
-    ['GOLONGAN DARAH','Data pribadi → gol_darah',data.gol_darah],
-    ['KODE POS','Alamat KTP → alamat_kodepos','Tidak diekstrak dari foto; diisi dari katalog wilayah setelah desa/kelurahan cocok']
+    ['NIK',data.nik],
+    ['NAMA',data.nama],
+    ['TEMPAT / TGL LAHIR',ttl],
+    ['JENIS KELAMIN',gender],
+    ['ALAMAT',street],
+    ['RT / RW',rtRw],
+    ['DESA / KELURAHAN',village],
+    ['KECAMATAN',data.alamat_kecamatan],
+    ['KABUPATEN / KOTA',city],
+    ['PROVINSI',data.alamat_provinsi],
+    ['AGAMA',data.agama],
+    ['STATUS PERKAWINAN',data.status_kawin],
+    ['KEWARGANEGARAAN',data.warga_negara],
+    ['GOLONGAN DARAH',data.gol_darah],
+    ['KODE POS','Diisi dari data wilayah']
   ];
-  const rowsHtml=rows.map(([source,target,value])=>`<tr><td>${esc(source)}</td><td>${esc(target)}</td><td>${String(value||'').trim()?esc(value):'<span class="ocr-map-missing">Belum terbaca</span>'}</td></tr>`).join('');
-  return `<details class="ocr-map-details" open><summary>Hasil pembacaan dan pemetaan OCR</summary><p>Setiap label KTP dipetakan ke kolom formulir di bawah. Alamat dipecah menjadi jalan, RT/RW, desa/kelurahan, kecamatan, kabupaten/kota, dan provinsi. Nama wilayah lalu dicocokkan bertingkat dengan katalog wilayah resmi. Kode pos bukan hasil OCR; nilainya diambil dari data desa/kelurahan setelah cocok.</p><div class="ocr-map-table-wrap"><table class="ocr-map-table"><thead><tr><th>Label / bagian KTP</th><th>Kolom tujuan</th><th>Hasil / status</th></tr></thead><tbody>${rowsHtml}</tbody></table></div></details>`;
+  const rowsHtml=rows.map(([label,value])=>`<tr><td>${esc(label)}</td><td>${String(value||'').trim()?esc(value):'<span class="ocr-map-missing">Belum terbaca</span>'}</td></tr>`).join('');
+  return `<details class="ocr-map-details" open><summary>Hasil pembacaan KTP</summary><div class="ocr-map-table-wrap"><table class="ocr-map-table"><thead><tr><th>Data KTP</th><th>Hasil</th></tr></thead><tbody>${rowsHtml}</tbody></table></div></details>`;
 }
 function renderForm(values={}){
   initialData=values;

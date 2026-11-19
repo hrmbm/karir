@@ -179,7 +179,8 @@ async function candidateFormDirect(browser){
 async function discRequiresNIK(browser){
  const test=await newTestPage(browser,freshState());const page=test.page;
  await page.goto(BASE+'/disc/',{waitUntil:'domcontentloaded'});await page.waitForSelector('#disc-identity-form');
- assert.match(await page.locator('#disc-app').innerText(),/Masukkan NIK 16 angka/i);
+ assert.doesNotMatch(await page.locator('#disc-app').innerText(),/Masukkan NIK 16 angka/i,'DISC identity should not expose the long instruction copy');
+ assert.equal(await page.locator('#disc-nik').count(),1,'NIK field must remain available');
  assert.equal(await page.locator('.disc-option').count(),0);
  await page.locator('#disc-nik').fill('0000000000000000');await page.locator('#disc-identity-submit').click();
  await page.waitForFunction(()=>document.querySelector('#disc-identity-error')?.textContent.includes('tidak ditemukan'));

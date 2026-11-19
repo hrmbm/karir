@@ -397,7 +397,7 @@ body.candidate-page{
 .ocr-map-table td:first-child{font-weight:800;white-space:normal;color:#40516a;overflow-wrap:anywhere}
 .ocr-map-table td:last-child{min-width:105px;overflow-wrap:anywhere;color:#26364d}
 .ocr-map-missing{color:#9b6b35;font-style:italic}
-@media(max-width:520px){.ocr-map-table{min-width:0}.ocr-map-table thead{display:none}.ocr-map-table tbody tr{display:block;padding:7px 0;border-top:1px solid #e9edf3}.ocr-map-table td{display:block;border:0;padding:3px 6px;overflow-wrap:anywhere}.ocr-map-table td:first-child{font-size:10px}.ocr-map-table td:nth-child(2)::before{content:'Tujuan: ';font-weight:800;color:#6c7b90}.ocr-map-table td:nth-child(3)::before{content:'Hasil: ';font-weight:800;color:#6c7b90}}
+@media(max-width:520px){.ocr-map-table{min-width:0}.ocr-map-table thead{display:none}.ocr-map-table tbody tr{display:block;padding:7px 0;border-top:1px solid #e9edf3}.ocr-map-table td{display:block;border:0;padding:3px 6px;overflow-wrap:anywhere}.ocr-map-table td:first-child{font-size:10px}.ocr-map-table td:nth-child(2)::before{content:'Hasil: ';font-weight:800;color:#6c7b90}}
 
 .camera-actions #capture-ktp:not(:disabled){background:#3b68d8!important;color:#fff!important;opacity:1!important}
 .camera-actions #capture-ktp:disabled{background:#e9edf5!important;color:#8995a8!important;opacity:1!important}

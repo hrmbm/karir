@@ -21,7 +21,7 @@ function loadLocal(candidateNik){
 }
 function clearLocal(){try{sessionStorage.removeItem(ANSWER_CACHE);}catch{}}
 function showIdentity(message=''){
-  root.innerHTML=`<section class="candidate-card"><div class="stage-kicker">REKRUTMEN · TES DISC</div><h1 class="candidate-title">Identifikasi kandidat</h1><p class="candidate-sub">Masukkan NIK 16 angka yang digunakan saat mengisi formulir Tahap 2. Tes DISC tersedia otomatis setelah lamaran Tahap 2 terdaftar dengan NIK yang cocok.</p><form id="disc-identity-form"><label class="field-label" for="disc-nik">NIK</label><input class="input" id="disc-nik" name="nik" inputmode="numeric" autocomplete="off" maxlength="16" pattern="[0-9]{16}" required placeholder="16 digit NIK" value="${esc(nik)}"><div class="form-error" id="disc-identity-error" role="alert">${esc(message)}</div><button class="btn btn-primary full" id="disc-identity-submit" type="submit">Cocokkan NIK</button></form></section>`;
+  root.innerHTML=`<section class="candidate-card"><div class="stage-kicker">REKRUTMEN · TES DISC</div><h1 class="candidate-title">Identifikasi kandidat</h1><form id="disc-identity-form"><label class="field-label" for="disc-nik">NIK</label><input class="input" id="disc-nik" name="nik" inputmode="numeric" autocomplete="off" maxlength="16" pattern="[0-9]{16}" required placeholder="16 digit NIK" value="${esc(nik)}"><div class="form-error" id="disc-identity-error" role="alert">${esc(message)}</div><button class="btn btn-primary full" id="disc-identity-submit" type="submit">Cocokkan NIK</button></form></section>`;
   const input=$('#disc-nik');
   input.addEventListener('input',()=>{input.value=input.value.replace(/\D/g,'').slice(0,16);});
   $('#disc-identity-form').addEventListener('submit',async event=>{
@@ -85,7 +85,7 @@ async function submitOrNext(){
     const {error}=await supabase.rpc('submit_disc_answers_by_nik',{p_nik:nik,p_answers:answers});
     if(error)throw error;
     clearLocal();
-    root.innerHTML=`<section class="candidate-card completion-card"><div class="completion-mark">✓</div><h1>Tes DISC selesai</h1><p>${esc(applicant?.full_name||'')}</p><p>Jawaban tersimpan dan akan dihitung menggunakan rumus DISC Portal Karir.</p></section>`;
+    root.innerHTML=`<section class="candidate-card completion-card"><div class="completion-mark">✓</div><h1>Tes DISC selesai</h1><p>${esc(applicant?.full_name||'')}</p></section>`;
   }catch(error){
     const e=$('#disc-error');if(e){e.hidden=false;e.textContent=error.message||'Jawaban belum berhasil disimpan.';}
     setBusy(button,false);
