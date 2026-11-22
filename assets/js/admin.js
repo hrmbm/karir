@@ -1,935 +1,1048 @@
-import { supabase, isConfigured } from './supabase.js';
-import { SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, TEMPLATE_URL } from './config.js';
-import { $, $$, esc, idDate, stageUrl } from './common.js?v=20261119-stage2-table-tools-01';
-import { printApplication } from './print.js';
-import { computeDisc } from './disc-engine.js';
+import { supabase, isConfigured } from './supabase.js?v=20261122-lowongan-v1';
+import { SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY } from './config.js?v=20261122-lowongan-v1';
+import { $, $$, esc } from './common.js?v=20261122-lowongan-v1';
+import {
+  DISTRICTS_BY_CITY,
+  APPLY_INFO_SOURCES,
+  FORM_INFO_SOURCES,
+  QUESTION_TYPES,
+  DEFAULT_VACANCIES,
+  normalizeVacancy,
+  normalizeVacancyList,
+  extractActivePositionNames,
+  mergeVacanciesWithPositions,
+  normalizeDistrictToken,
+  buildShareUrl
+} from './vacancy-logic.js?v=20261122-lowongan-v1';
 
 const loginView = $('#login-view');
 const shell = $('#admin-shell');
 const content = $('#admin-content');
-let applicants = [];
-let employees = [];
-let activeView = 'dashboard';
-let adminDisplayName = 'HR Admin';
-let currentUserId = null;
-let printTemplates = [];
-let editingEmployeeId = null;
-let hiringApplicantId = null;
-let editingApplicantId = null;
 
-const TITLES = {
-  dashboard: 'Dashboard', stage1: 'Rekrutmen Tahap 1', stage2: 'Rekrutmen Tahap 2',
-  stage3: 'Rekrutmen Tahap 3', employees: 'Tracking Karyawan', print: 'Cetak Lamaran',
-  reports: 'Laporan Rekrutmen', settings: 'Pengaturan Portal'
-};
-const stageLabel = {
-  stage1_pending: 'Tahap 1', application_submitted: 'Tahap 2', disc_completed: 'Tahap 3',
-  stage4_pending: 'Tahap 4', hired: 'Karyawan', rejected: 'Tidak dilanjutkan'
-};
-const stageClass = {
-  stage1_pending: 'gray', application_submitted: 'blue', disc_completed: 'green',
-  stage4_pending: 'gold', hired: 'green', rejected: 'gray'
-};
+let vacancies = [];
+let currentAccessToken = '';
+let searchQuery = '';
+let editingVacancyId = null;
+let draftVacancy = null;
+let pickerCityFilter = 'Semua';
+let pickerSearch = '';
+
+const QUESTION_TYPE_LABELS = Object.fromEntries(QUESTION_TYPES.map(item => [item.value, item.label]));
 
 function say(message) {
   let element = $('#admin-toast');
   if (!element) {
     element = document.createElement('div');
     element.id = 'admin-toast';
-    element.style.cssText = 'position:fixed;right:22px;bottom:22px;z-index:1000;padding:12px 16px;background:#016172;color:#fff;border-radius:10px;font:12px Arial,Helvetica,sans-serif;box-shadow:0 8px 25px rgba(1,97,114,.22);max-width:min(480px,calc(100vw - 32px))';
+    element.style.cssText = 'position:fixed;right:20px;bottom:20px;z-index:1500;padding:12px 16px;background:#016172;color:#fff;border-radius:10px;font:13px Arial,Helvetica,sans-serif;box-shadow:0 8px 25px rgba(1,97,114,.22);max-width:min(460px,calc(100vw - 32px))';
     document.body.append(element);
   }
   element.textContent = message;
   element.classList.remove('hidden');
   clearTimeout(element._hideTimer);
-  element._hideTimer = setTimeout(() => element.classList.add('hidden'), 3600);
+  element._hideTimer = setTimeout(() => element.classList.add('hidden'), 3400);
 }
 
-function statusPill(stage) {
-  return `<span class="status-pill ${stageClass[stage] || 'gray'}">${esc(stageLabel[stage] || stage || '—')}</span>`;
-}
-function fmtAge(applicant) {
-  return applicant?.application_data?.umur ? `${esc(applicant.application_data.umur)} th` : '—';
-}
-function header(title, subtitle, actions = '') {
-  return `<div class="page-intro"><div><h1>${esc(title)}</h1><p>${esc(subtitle)}</p></div><div class="page-actions">${actions}</div></div>`;
-}
-function tableToolbar(placeholder = 'Cari nama / NIK…') {
-  return `<div class="panel-head"><div><h3>Daftar kandidat</h3><p>Data lamaran tersimpan</p></div><div class="table-search"><input id="table-search" type="search" placeholder="${esc(placeholder)}"></div></div>`;
-}
-function emptyRow(columns, message = 'Belum ada data') {
-  return `<tr><td colspan="${columns}" class="table-empty">${esc(message)}</td></tr>`;
-}
-function getEmployeeForApplicant(applicant) {
-  return Array.isArray(applicant?.employees) ? applicant.employees[0] : applicant?.employees;
-}
-function getDiscForApplicant(applicant) {
-  return Array.isArray(applicant?.disc_submissions) ? applicant.disc_submissions[0] : applicant?.disc_submissions;
-}
-
-const APPLICATION_FIELD_LABELS = {
- nama:'Nama lengkap',nik:'NIK',posisi:'Posisi dilamar',tempat_lahir:'Tempat lahir',tanggal_lahir:'Tanggal lahir',
- gender:'Jenis kelamin',tinggi:'Tinggi badan',berat:'Berat badan',gol_darah:'Golongan darah',agama:'Agama',
- warga_negara:'Kewarganegaraan',telepon:'WhatsApp / telepon',email:'Email',alamat_provinsi:'Provinsi KTP',
- alamat_kota_nama:'Kabupaten / kota KTP',alamat_kecamatan:'Kecamatan KTP',alamat_desa:'Desa / kelurahan KTP',
- alamat_tipe:'Jenis alamat KTP',alamat_jalan:'Jalan / dusun KTP',alamat_rt:'RT',alamat_rw:'RW',alamat_kodepos:'Kode pos',
- domisili:'Alamat domisili',status_kawin:'Status perkawinan',hobby:'Hobi dan minat',
- mulai_kerja:'Tanggal bisa mulai bekerja',gaji_harapan:'Gaji yang diharapkan',fasilitas_harapan:'Fasilitas yang diharapkan',
- jawaban1:'Pengetahuan tentang perusahaan',jawaban2:'Deskripsi diri',jawaban3:'Kontribusi untuk perusahaan',
- setuju:'Pernyataan kebenaran data'
-};
-function applicationFieldLabel(key){
- if(APPLICATION_FIELD_LABELS[key])return APPLICATION_FIELD_LABELS[key];
- return String(key).replace(/([a-z])([A-Z])/g,'$1 $2').replace(/_/g,' ')
-   .replace(/\b\w/g,char=>char.toUpperCase());
-}
-function displayApplicationValue(value){
- if(value===null||value===undefined||value==='')return '—';
- if(typeof value==='boolean')return value?'Ya':'Tidak';
- if(Array.isArray(value))return value.map(displayApplicationValue).join(', ');
- if(typeof value==='object')return Object.entries(value).map(([key,item])=>`${applicationFieldLabel(key)}: ${displayApplicationValue(item)}`).join(' · ');
- return String(value);
-}
-function discGraphSvg(result){
- const series=[['G1',result.g1,'#3b68d8'],['G2',result.g2,'#26977d'],['G3',result.g3,'#c69b54']];
- const xs=[24,92,160,228],y=value=>Math.round(76-(Math.max(-8,Math.min(8,Number(value)||0))+8)*3.35);
- const lines=series.map(([name,values,color])=>{
-  const points=values.map((value,index)=>`${xs[index]},${y(value)}`).join(' ');
-  return `<polyline points="${points}" fill="none" stroke="${color}" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>${values.map((value,index)=>`<circle cx="${xs[index]}" cy="${y(value)}" r="3" fill="${color}"/>`).join('')}`;
- }).join('');
- return `<div class="disc-mini-graph"><svg viewBox="0 0 252 104" role="img" aria-label="Grafik skor DISC untuk D, I, S, C"><line x1="15" y1="49" x2="237" y2="49" stroke="#cbd4e1" stroke-dasharray="3 4"/><line x1="15" y1="15" x2="237" y2="15" stroke="#edf0f5"/><line x1="15" y1="83" x2="237" y2="83" stroke="#edf0f5"/>${lines}${['D','I','S','C'].map((letter,index)=>`<text x="${xs[index]}" y="99" text-anchor="middle">${letter}</text>`).join('')}</svg><div class="disc-graph-legend"><span><i class="g1"></i>G1</span><span><i class="g2"></i>G2</span><span><i class="g3"></i>G3</span></div></div>`;
-}
-function applicantRows(rows, action = 'print') {
- if(!rows.length)return emptyRow(action==='both'?7:5);
- return rows.map(applicant=>{
-  const employee=getEmployeeForApplicant(applicant),disc=getDiscForApplicant(applicant);
-  let graph='<span class="status-pill gray">Belum ada grafik</span>',personality='—';
-  if(disc?.answers){
-   try{const result=computeDisc(disc.answers),natural=result.pola[2];graph=discGraphSvg(result);personality=`<b>${esc(natural.title)}</b><small class="table-subline">${esc(natural.nama)} · Dominan ${esc(result.hurufDominan)}</small>`;}
-   catch{graph='<span class="status-pill gray">Hasil perlu diperiksa</span>';personality='Perlu diperiksa';}
+async function copyText(text) {
+  if (navigator.clipboard?.writeText) {
+    await navigator.clipboard.writeText(text);
+    return;
   }
-  return `<tr><td><b>${esc(applicant.full_name)}</b><small class="table-subline">${esc(applicant.nik)}</small></td>
-   <td>${esc(applicant.position||'—')}</td><td>${fmtAge(applicant)}</td><td>${statusPill(applicant.stage)}</td>
-   ${action==='both'?'<td>'+graph+'</td><td>'+personality+'</td>':''}
-   <td><div class="row-actions">${action==='both'&&!employee?`<button class="icon-btn" data-hire="${esc(applicant.id)}">Jadikan karyawan</button>`:''}
-   <button class="icon-btn" data-print="${esc(applicant.id)}">Cetak</button></div></td></tr>`;
- }).join('');
+  const area = document.createElement('textarea');
+  area.value = text;
+  area.style.position = 'fixed';
+  area.style.opacity = '0';
+  document.body.append(area);
+  area.select();
+  document.execCommand('copy');
+  area.remove();
 }
 
-function bindSearch(selector, rerender) {
-  const input = $(selector);
-  if (!input) return;
-  input.addEventListener('input', () => rerender(input.value.trim().toLocaleLowerCase('id')));
-}
-
-async function refreshData() {
-  const [candidateResult, employeeResult] = await Promise.all([
-    supabase.from('applicants')
-      .select('id,full_name,nik,position,stage,application_data,cv_path,ktp_path,created_at,background_check_status,disc_invited,disc_submissions(id,answers,completed_at),employees(id)')
-      .order('created_at', { ascending: false }).limit(1000),
-    supabase.from('employees')
-      .select('id,applicant_id,employee_no,department,position,employment_status,join_date,notes,created_at,updated_at')
-      .order('created_at', { ascending: false }).limit(1000)
+async function fetchVacancyData() {
+  const [settingsResult, apiResult] = await Promise.all([
+    supabase
+      .from('portal_settings')
+      .select('key,value')
+      .in('key', ['job_vacancies_config', 'application_positions']),
+    fetch('/api/vacancies', { cache: 'no-store' })
+      .then(r => (r.ok ? r.json() : null))
+      .catch(() => null)
   ]);
-  if (candidateResult.error) throw candidateResult.error;
-  if (employeeResult.error) throw employeeResult.error;
-  applicants = candidateResult.data || [];
-  employees = employeeResult.data || [];
+
+  if (settingsResult.error) throw settingsResult.error;
+
+  const settingsMap = Object.fromEntries((settingsResult.data || []).map(row => [row.key, row.value]));
+  const supabaseConfig = Array.isArray(settingsMap.job_vacancies_config) ? settingsMap.job_vacancies_config : [];
+  const positionNames = Array.isArray(settingsMap.application_positions) ? settingsMap.application_positions : [];
+  const apiVacancies = Array.isArray(apiResult?.vacancies) ? apiResult.vacancies : [];
+
+  let base = [];
+  if (supabaseConfig.length) {
+    base = supabaseConfig;
+  } else if (apiResult?.customized === true && apiVacancies.length) {
+    base = apiVacancies;
+  } else if (positionNames.length) {
+    base = [];
+  } else if (apiVacancies.length) {
+    base = apiVacancies;
+  } else {
+    base = DEFAULT_VACANCIES;
+  }
+
+  vacancies = mergeVacanciesWithPositions(base, positionNames);
 }
 
-function renderDashboard() {
-  const total = applicants.length;
-  const stage1 = applicants.filter(a => a.stage === 'stage1_pending').length;
-  const stage2 = applicants.filter(a => a.stage === 'application_submitted').length;
-  const stage3 = applicants.filter(a => a.stage === 'disc_completed').length;
-  const stage4 = applicants.filter(a => a.stage === 'stage4_pending').length;
-  const hired = employees.length;
-  const rejected = applicants.filter(a => a.stage === 'rejected').length;
-  const submitted = stage2 + stage3 + stage4 + hired;
-  const stages = [['Tahap 1', stage1], ['Lamaran', stage2], ['DISC', stage3], ['Tahap 4', stage4], ['Karyawan', hired], ['Tidak lanjut', rejected]];
-  const max = Math.max(1, ...stages.map(item => item[1]));
-  const summaries = [
-    ['Lamaran masuk', submitted], ['Tes DISC selesai', stage3 + stage4 + hired],
-    ['Menunggu tahap 4', stage4], ['Terdaftar sebagai karyawan', hired]
-  ];
-  content.innerHTML = header('Dashboard', 'Ringkasan aktivitas rekrutmen') + `
-    <div class="stat-grid">
-      <article class="stat-card"><div class="stat-top">Total kandidat <span class="stat-icon">♙</span></div><div class="stat-number">${total}</div><div class="stat-note">Seluruh kandidat terdaftar</div></article>
-      <article class="stat-card"><div class="stat-top">Lamaran masuk <span class="stat-icon">▤</span></div><div class="stat-number">${submitted}</div><div class="stat-note">Formulir telah dikirim</div></article>
-      <article class="stat-card"><div class="stat-top">Tes DISC selesai <span class="stat-icon">◈</span></div><div class="stat-number">${stage3 + stage4 + hired}</div><div class="stat-note">Jawaban lengkap tersimpan</div></article>
-      <article class="stat-card"><div class="stat-top">Karyawan <span class="stat-icon">⌂</span></div><div class="stat-number">${hired}</div><div class="stat-note">Dalam tracking karyawan</div></article>
+async function persistVacancies(nextList) {
+  const clean = normalizeVacancyList(nextList);
+  if (!clean.length) {
+    throw new Error('Minimal harus ada satu lowongan.');
+  }
+  const activeNames = extractActivePositionNames(clean);
+  if (!activeNames.length) {
+    throw new Error('Minimal satu lowongan harus berstatus Aktif agar halaman lamaran tetap tersedia.');
+  }
+
+  const now = new Date().toISOString();
+  const { error: settingsError } = await supabase.from('portal_settings').upsert(
+    [
+      { key: 'application_positions', value: activeNames, updated_at: now },
+      { key: 'job_vacancies_config', value: clean, updated_at: now }
+    ],
+    { onConflict: 'key' }
+  );
+  if (settingsError) throw settingsError;
+
+  const { data: sessionData } = await supabase.auth.getSession();
+  const token = sessionData?.session?.access_token || currentAccessToken;
+  if (token) {
+    const response = await fetch('/api/vacancies', {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`
+      },
+      body: JSON.stringify({ vacancies: clean })
+    }).catch(() => null);
+    if (response && !response.ok) {
+      const errBody = await response.json().catch(() => ({}));
+      console.warn('Sinkronisasi server lokal gagal:', errBody.error || response.status);
+    }
+  }
+
+  vacancies = clean;
+}
+
+function formatDistrictSummary(districts = []) {
+  if (!districts.length) return '<span class="loc-empty">Belum ditentukan</span>';
+  const grouped = new Map();
+  districts.forEach(token => {
+    const parts = String(token).split(/\s*-\s*/);
+    if (parts.length === 2) {
+      const [city, dist] = parts;
+      if (!grouped.has(city)) grouped.set(city, []);
+      grouped.get(city).push(dist);
+    } else {
+      if (!grouped.has('Area')) grouped.set('Area', []);
+      grouped.get('Area').push(token);
+    }
+  });
+  return [...grouped.entries()]
+    .map(([city, list]) => `<div><b>${esc(city)}:</b> ${esc(list.join(', '))}</div>`)
+    .join('');
+}
+
+function formatQuestionSummary(questions = []) {
+  if (!questions.length) return '<span class="loc-empty">Belum ada pertanyaan</span>';
+  return `<ul class="q-summary-list">${questions
+    .map((q, idx) => {
+      const typeLabel = QUESTION_TYPE_LABELS[q.type] || q.type;
+      let scoreSummary = '';
+      if (q.options?.length) {
+        scoreSummary = q.options
+          .map(opt => `${opt.label} (${opt.score})`)
+          .join(' · ');
+      } else {
+        scoreSummary = `Diisi (+${q.filledScore})`;
+      }
+      return `<li class="q-summary-item">
+        <div class="q-summary-head">
+          <span><b>${idx + 1}.</b> ${esc(q.label)}</span>
+          <span class="q-summary-type">${esc(typeLabel)}</span>
+        </div>
+        <div class="q-summary-scores">${esc(scoreSummary)}</div>
+      </li>`;
+    })
+    .join('')}</ul>`;
+}
+
+function filteredVacancies() {
+  if (!searchQuery) return vacancies;
+  return vacancies.filter(v => {
+    const haystack = [
+      v.name,
+      v.primaryDistricts.join(' '),
+      v.otherLocationLabel,
+      ...v.questions.map(q => `${q.label} ${(q.options || []).map(o => o.label).join(' ')}`)
+    ]
+      .join(' ')
+      .toLocaleLowerCase('id');
+    return haystack.includes(searchQuery);
+  });
+}
+
+function renderVacancyManager() {
+  const list = filteredVacancies();
+  const activeCount = vacancies.filter(v => v.active !== false).length;
+
+  const desktopRows = list.length
+    ? list
+        .map(v => `<tr>
+          <td>
+            <div class="pos-name-title">${esc(v.name)}</div>
+            <div class="pos-state-line ${v.active !== false ? '' : 'inactive'}">
+              ${v.active !== false ? 'Aktif' : 'Nonaktif'}
+            </div>
+          </td>
+          <td><div class="loc-district-list">${formatDistrictSummary(v.primaryDistricts)}</div></td>
+          <td class="col-score">+${esc(v.primaryLocationScore)}</td>
+          <td>${esc(v.otherLocationLabel)}</td>
+          <td class="col-score">+${esc(v.otherLocationScore)}</td>
+          <td>${formatQuestionSummary(v.questions)}</td>
+          <td>
+            <div class="vacancy-row-actions">
+              <button type="button" class="icon-btn primary-action" data-edit-vacancy="${esc(v.id)}">Edit</button>
+              <button type="button" class="icon-btn" data-share-vacancy="${esc(v.id)}">Bagikan</button>
+              <button type="button" class="icon-btn" data-dup-vacancy="${esc(v.id)}">Duplikat</button>
+              <button type="button" class="icon-btn danger-action" data-del-vacancy="${esc(v.id)}">Hapus</button>
+            </div>
+          </td>
+        </tr>`)
+        .join('')
+    : `<tr><td colspan="7" class="table-empty">Tidak ada lowongan yang sesuai pencarian.</td></tr>`;
+
+  const mobileCards = list.length
+    ? list
+        .map(v => `<article class="vacancy-card-m">
+          <div class="vacancy-card-m-head">
+            <div>
+              <div class="pos-name-title">${esc(v.name)}</div>
+              <div class="pos-state-line ${v.active !== false ? '' : 'inactive'}">
+                ${v.active !== false ? 'Aktif' : 'Nonaktif'}
+              </div>
+            </div>
+          </div>
+          <div class="vacancy-card-m-grid">
+            <div>
+              <div class="vacancy-card-m-label">Lokasi Utama</div>
+              <div class="loc-district-list">${formatDistrictSummary(v.primaryDistricts)}</div>
+            </div>
+            <div class="vacancy-card-m-score">+${esc(v.primaryLocationScore)}</div>
+            <div>
+              <div class="vacancy-card-m-label">Lokasi Lain</div>
+              <div>${esc(v.otherLocationLabel)}</div>
+            </div>
+            <div class="vacancy-card-m-score">+${esc(v.otherLocationScore)}</div>
+          </div>
+          <div class="vacancy-card-m-qs">
+            <div class="vacancy-card-m-label" style="margin-bottom:8px">Pertanyaan & Skor</div>
+            ${formatQuestionSummary(v.questions)}
+          </div>
+          <div class="vacancy-card-m-actions">
+            <button type="button" class="icon-btn primary-action" data-edit-vacancy="${esc(v.id)}">Edit</button>
+            <button type="button" class="icon-btn" data-share-vacancy="${esc(v.id)}">Bagikan</button>
+            <button type="button" class="icon-btn" data-dup-vacancy="${esc(v.id)}">Duplikat</button>
+            <button type="button" class="icon-btn danger-action" data-del-vacancy="${esc(v.id)}">Hapus</button>
+          </div>
+        </article>`)
+        .join('')
+    : `<div class="vacancy-card-m"><div class="table-empty">Tidak ada lowongan yang sesuai pencarian.</div></div>`;
+
+  content.innerHTML = `
+    <div class="vacancy-toolbar">
+      <div class="vacancy-toolbar-meta">
+        <h2>Daftar Lowongan</h2>
+        <span class="vacancy-count">${vacancies.length} posisi · ${activeCount} aktif</span>
+      </div>
+      <div class="vacancy-toolbar-actions">
+        <input id="vacancy-search" class="vacancy-search" type="search" value="${esc(searchQuery)}" placeholder="Cari posisi, lokasi, pertanyaan…">
+        <button id="share-portal-btn" type="button" class="btn btn-secondary">Bagikan Portal</button>
+        <button id="add-vacancy-btn" type="button" class="btn btn-primary">+ Tambah Lowongan</button>
+      </div>
     </div>
-    <div class="content-grid">
-      <section class="panel"><div class="panel-head"><div><h3>Alur rekrutmen</h3><p>Distribusi kandidat per tahap</p></div><span class="status-pill blue">${total} kandidat</span></div>
-        <div class="panel-body"><div class="chart-bars dashboard-bars">${stages.map(([label, value]) => `<div class="bar-group"><span class="bar-value">${value}</span><div class="bar" style="height:${Math.max(4, value / max * 118)}px"></div><span class="bar-label">${esc(label)}</span></div>`).join('')}</div></div>
-      </section>
-      <section class="panel"><div class="panel-head"><div><h3>Ringkasan tahap</h3><p>Status data saat ini</p></div></div>
-        <div class="panel-body"><div class="stage-list">${summaries.map(([label, value]) => `<div class="stage-row"><div><b>${esc(label)}</b><small>${value} data</small><div class="progress-track"><div class="progress-fill" style="width:${total ? Math.min(100, value / total * 100) : 0}%"></div></div></div><span class="stage-count">${value}</span></div>`).join('')}</div></div>
-      </section>
-    </div>
-    <section class="panel table-panel"><div class="panel-head"><div><h3>Kandidat terbaru</h3><p>Entri paling baru</p></div><button class="btn btn-secondary" id="refresh-dashboard">Muat ulang ↻</button></div>
-      <div class="table-wrap"><table class="data-table"><thead><tr><th>KANDIDAT</th><th>POSISI</th><th>USIA</th><th>STATUS</th><th>AKSI</th></tr></thead><tbody>${applicantRows(applicants.slice(0, 7), 'print')}</tbody></table></div>
-    </section>`;
-  bindPrint();
-  $('#refresh-dashboard')?.addEventListener('click', () => loadView('dashboard'));
-}
 
+    <section class="vacancy-table-panel">
+      <div class="vacancy-table-wrap">
+        <table class="vacancy-table">
+          <thead>
+            <tr>
+              <th class="col-pos">Nama Posisi</th>
+              <th class="col-loc">Lokasi Utama</th>
+              <th class="col-score">Skor</th>
+              <th class="col-other">Lokasi Lain</th>
+              <th class="col-score">Skor</th>
+              <th class="col-questions">Pertanyaan & Skor</th>
+              <th class="col-actions">Aksi</th>
+            </tr>
+          </thead>
+          <tbody>${desktopRows}</tbody>
+        </table>
+      </div>
+    </section>
 
-function stage1ExperienceColumns(rows){return [...new Set(rows.flatMap(row=>Object.keys(row.experience_details||{})))].sort();}
-function stage1RowsHtml(rows,keys){
- if(!rows.length)return emptyRow(9+keys.length,'Belum ada lamaran Tahap 1');
- return rows.map(row=>{
-  const details=row.experience_details||{};
-  return `<tr><td><b>${esc(row.full_name)}</b></td><td>${esc(row.position)}</td><td>${esc(row.city||'—')}</td>
-   <td>${esc(row.district||'—')}</td><td>${esc(row.whatsapp||'—')}</td>
-   ${keys.map(key=>`<td>${esc(displayApplicationValue(details[key]))}</td>`).join('')}
-   <td><span class="status-pill blue">${esc(row.status||'received')}</span></td><td data-sort-value="${esc(row.created_at||'')}">${esc(idDate(row.created_at))}</td>
-   <td><button class="icon-btn" data-stage1-cv="${esc(row.id)}">Lihat CV</button></td>
-   <td><div class="row-actions"><button class="icon-btn" data-stage1-wa="${esc(row.id)}">Kirim Tahap 2</button>
-   <button class="icon-btn" data-stage1-status="${esc(row.id)}">Tandai ditinjau</button></div></td></tr>`;
- }).join('');
-}
-async function renderStage1(){
- const {data,error}=await supabase.from('candidate_stage1_applications')
-  .select('id,position,full_name,city,district,whatsapp,experience_details,cv_path,cv_filename,status,created_at')
-  .order('created_at',{ascending:false}).limit(500);
- if(error)throw error;
- const rows=data||[],keys=stage1ExperienceColumns(rows);
- const headers=['NAMA','POSISI','KABUPATEN / KOTA','KECAMATAN','WHATSAPP',
-  ...keys.map(key=>applicationFieldLabel(key).toLocaleUpperCase('id')),'STATUS','TANGGAL','CV','AKSI'];
- const paint=query=>{
-  const filtered=rows.filter(row=>`${row.full_name} ${row.whatsapp} ${row.position} ${row.city} ${row.district} ${JSON.stringify(row.experience_details||{})}`.toLocaleLowerCase('id').includes(query));
-  $('#stage1-rows').innerHTML=stage1RowsHtml(filtered,keys);bindStage1Actions(rows);
- };
- content.innerHTML=header('Rekrutmen Tahap 1','Data awal dari /apply · ringkasan lamaran dikirim ke WhatsApp HR 08133193313; HR dapat meneruskan kandidat ke Tahap 2')+
-  `<section class="panel table-panel">${tableToolbar('Cari nama / WhatsApp / posisi / pengalaman…')}
-   <div class="table-wrap recruitment-data-scroll"><table class="data-table recruitment-wide-table"><thead><tr>${headers.map(label=>`<th>${esc(label)}</th>`).join('')}</tr></thead><tbody id="stage1-rows">${stage1RowsHtml(rows,keys)}</tbody></table></div></section>`;
- bindSearch('#table-search',paint);bindStage1Actions(rows);
-}
-function bindStage1Actions(rows){
- $$('[data-stage1-wa]').forEach(button=>button.addEventListener('click',()=>{
-  const row=rows.find(item=>item.id===button.dataset.stage1Wa);if(!row)return;
-  const phone=String(row.whatsapp||'').replace(/\D/g,'');
-  if(!phone){say('Nomor WhatsApp kandidat tidak tersedia.');return;}
-  const message=`Halo ${row.full_name}, terima kasih telah melamar di Mitra Binamandiri Makmur. Lamaran awal Anda sesuai untuk dilanjutkan ke pengisian formulir kandidat Tahap 2. Silakan isi data lengkap melalui ${stageUrl(2)}. Setelah mengirim formulir, mohon balas pesan ini untuk konfirmasi.`;
-  window.open(`https://wa.me/${phone}?text=${encodeURIComponent(message)}`,'_blank','noopener,noreferrer');
- }));
- $$('[data-stage1-status]').forEach(button=>button.addEventListener('click',async()=>{
-  const {error}=await supabase.from('candidate_stage1_applications').update({status:'reviewed'}).eq('id',button.dataset.stage1Status);
-  if(error)say(error.message);else{say('Status lamaran diperbarui.');loadView('stage1');}
- }));
- $$('[data-stage1-cv]').forEach(button=>button.addEventListener('click',async()=>{
-  const originalText=button.textContent,record=rows.find(item=>item.id===button.dataset.stage1Cv);
-  if(!record?.cv_path){say('Path CV tidak ditemukan.');return;}
-  button.disabled=true;button.textContent='Menyiapkan…';
-  try{
-   const {data,error}=await supabase.storage.from('candidate-stage1-cv').createSignedUrl(record.cv_path,300);
-   if(error)throw error;
-   if(!data?.signedUrl)throw new Error('Tautan CV tidak berhasil dibuat.');
-   const link=document.createElement('a');link.className='icon-btn';link.href=data.signedUrl;link.target='_blank';link.rel='noopener noreferrer';link.textContent='Buka CV ↗';
-   button.replaceWith(link);say('CV siap dibuka. Klik Buka CV.');
-  }catch(error){button.disabled=false;button.textContent=originalText;say(error.message||'CV tidak dapat dibuka.');}
- }));
-}
-async function renderSettings(){
-  const {data,error}=await supabase.from('portal_settings').select('value').eq('key','ktp_ocr_enabled').maybeSingle();if(error)throw error;
-  const enabled=data?.value===true;
-  content.innerHTML=header('Pengaturan Portal','Kontrol fitur kandidat')+`<section class="panel" style="padding:22px;max-width:760px"><div style="display:flex;justify-content:space-between;align-items:center;gap:20px"><div><h3 style="margin:0 0 6px">Pemindaian KTP (OCR)</h3><p class="subtle" style="margin:0">Jika nonaktif, kandidat langsung mengisi seluruh data KTP secara manual.</p></div><label style="display:flex;align-items:center;gap:10px;font-weight:700"><input id="ocr-feature-toggle" type="checkbox" ${enabled?'checked':''}> ${enabled?'Aktif':'Nonaktif'}</label></div><p class="mini-note" style="margin-top:14px">Mode awal: nonaktif. Kode OCR tetap tersedia untuk diaktifkan kembali.</p></section>`;
-  $('#ocr-feature-toggle').addEventListener('change',async e=>{const value=e.target.checked;const {error}=await supabase.from('portal_settings').upsert({key:'ktp_ocr_enabled',value,updated_at:new Date().toISOString()},{onConflict:'key'});if(error){e.target.checked=!value;say(error.message);}else{say(value?'OCR diaktifkan.':'OCR dinonaktifkan.');loadView('settings');}});
-}
-function bindBackgroundCheck(){
- $$('[data-bg-check]').forEach(button=>button.addEventListener('click',async()=>{
-  const id=button.dataset.bgCheck,select=$(`[data-bg-value="${id}"]`);if(!select)return;
-  const passed=select.value==='passed';
-  const {error}=await supabase.from('applicants').update({background_check_status:select.value,disc_invited:passed}).eq('id',id);
-  if(error){say(error.message);return;}
-  say('Status pemeriksaan disimpan. Kandidat yang lolos dapat membuka DISC dengan mencocokkan NIK.');
-  loadView('stage2');
- }));
-}
-function stage2FieldKeys(rows){
- const excluded=new Set(['nama','nik','posisi','ktp_foto','ktp_path','alamat_asal','umur','domisili_berbeda','__form_step','__saved_at','__cv_filename','__cv_path']);
- const keys=new Set();
- rows.forEach(row=>Object.keys(row.application_data||{}).forEach(key=>{
-  if(excluded.has(key)||key.startsWith('__')||key.endsWith('_id')||key==='alamat_wilayah_type')return;
-  keys.add(key);
- }));
- return [...keys].sort((a,b)=>a.localeCompare(b,'id'));
-}
-function stage2RowHtml(row,keys){
- const data=row.application_data||{};
- return `<tr><td><b>${esc(row.full_name)}</b><small class="table-subline">${esc(row.nik)}</small></td>
-  <td>${esc(row.position||data.posisi||'—')}</td>
-  ${keys.map(key=>`<td>${esc(displayApplicationValue(data[key]))}</td>`).join('')}
-  <td>${row.ktp_path?`<button class="icon-btn" data-stage2-ktp="${esc(row.id)}">Buka KTP</button>`:'—'}</td>
-  <td>${row.cv_path?`<button class="icon-btn" data-stage2-cv="${esc(row.id)}">Buka CV</button>`:'—'}</td>
-  <td>${statusPill(row.stage)}</td><td><select class="select" style="min-width:145px" data-bg-value="${esc(row.id)}">
-   <option value="pending" ${(row.background_check_status||'pending')==='pending'?'selected':''}>Menunggu</option>
-   <option value="passed" ${row.background_check_status==='passed'?'selected':''}>Lolos</option>
-   <option value="failed" ${row.background_check_status==='failed'?'selected':''}>Tidak lolos</option>
-  </select></td><td><div class="row-actions stage2-actions"><button class="icon-btn" data-bg-check="${esc(row.id)}">Simpan kelayakan DISC</button>
-   <button class="icon-btn" data-stage2-edit="${esc(row.id)}">Edit</button><button class="icon-btn danger" data-stage2-delete="${esc(row.id)}">Hapus</button></div></td></tr>`;
-}
-function bindStage2DocumentActions(){
- const bind=(selector,bucket,pathKey,label,datasetKey)=>{
-  $$(selector).forEach(button=>button.addEventListener('click',async()=>{
-   const record=applicants.find(item=>item.id===button.dataset[datasetKey]);
-   if(!record?.[pathKey]){say('Path dokumen tidak ditemukan.');return;}
-   const old=button.textContent;button.disabled=true;button.textContent='Menyiapkan…';
-   try{
-    const {data,error}=await supabase.storage.from(bucket).createSignedUrl(record[pathKey],300);
-    if(error)throw error;
-    if(!data?.signedUrl)throw new Error('Tautan dokumen tidak berhasil dibuat.');
-    const link=document.createElement('a');link.className='icon-btn';link.href=data.signedUrl;link.target='_blank';link.rel='noopener noreferrer';link.textContent='Buka '+label+' ↗';
-    button.replaceWith(link);say(label+' siap dibuka. Klik tautan Buka.');
-   }catch(error){button.disabled=false;button.textContent=old;say(error.message||'Dokumen tidak dapat dibuka.');}
-  }));
- };
- bind('[data-stage2-ktp]','candidate-identity','ktp_path','KTP','stage2Ktp');
- bind('[data-stage2-cv]','candidate-files','cv_path','CV','stage2Cv');
-}
+    <section class="vacancy-cards-mobile">${mobileCards}</section>
+  `;
 
-async function loadPositionList(){
- const {data,error}=await supabase.from('portal_settings').select('value').eq('key','application_positions').maybeSingle();
- if(error)throw error;
- const values=Array.isArray(data?.value)?data.value:[];
- return [...new Set(values.map(value=>String(value||'').trim()).filter(Boolean))];
-}
-async function savePositionList(positions){
- const clean=[...new Set(positions.map(value=>String(value||'').trim()).filter(Boolean))];
- if(!clean.length)throw new Error('Daftar posisi tidak boleh kosong.');
- if(clean.length!==positions.length)throw new Error('Nama posisi kosong atau duplikat. Periksa kembali daftar.');
- const {error}=await supabase.from('portal_settings').upsert({key:'application_positions',value:clean,updated_at:new Date().toISOString()},{onConflict:'key'});
- if(error)throw error;
-}
-function positionManagerHtml(positions){
- return `<section class="panel position-manager"><div class="panel-head"><div><h3>Daftar Lowongan</h3><p>Perubahan digunakan oleh pilihan posisi di /form dan /apply.</p></div></div>
-  <div class="position-manager-body"><div id="position-rows">${positions.map((position,index)=>`<div class="position-row"><input class="input" maxlength="100" data-position-index="${index}" value="${esc(position)}" aria-label="Nama posisi ${index+1}"><button type="button" class="icon-btn" data-position-delete="${index}" ${positions.length===1?'disabled':''}>Hapus</button></div>`).join('')}</div>
-  <div class="position-add-row"><input class="input" id="new-position" maxlength="100" placeholder="Nama posisi baru"><button type="button" class="btn btn-secondary" id="add-position">Tambah posisi</button></div>
-  <div class="position-manager-foot"><small>Nama posisi akan menjadi pilihan resmi kandidat.</small><button type="button" class="btn btn-primary" id="save-positions">Simpan daftar posisi</button></div></div></section>`;
-}
-function bindPositionManager(positions){
- $('#add-position')?.addEventListener('click',async()=>{
-  const value=$('#new-position')?.value.trim()||'';
-  if(!value){say('Isi nama posisi terlebih dahulu.');return;}
-  if(positions.some(item=>item.toLocaleLowerCase('id')===value.toLocaleLowerCase('id'))){say('Nama posisi sudah ada.');return;}
-  try{await savePositionList([...positions,value]);say('Posisi baru ditambahkan.');loadView('stage2');}catch(error){say(error.message||'Posisi gagal ditambahkan.');}
- });
- $$('[data-position-delete]').forEach(button=>button.addEventListener('click',async()=>{
-  const index=Number(button.dataset.positionDelete),next=positions.filter((_,i)=>i!==index);
-  try{await savePositionList(next);say('Posisi dihapus dari daftar kandidat.');loadView('stage2');}catch(error){say(error.message||'Posisi gagal dihapus.');}
- }));
- $('#save-positions')?.addEventListener('click',async()=>{
-  const values=$$('[data-position-index]').map(input=>input.value.trim());
-  if(values.some(value=>!value)){say('Nama posisi tidak boleh kosong.');return;}
-  if(new Set(values.map(value=>value.toLocaleLowerCase('id'))).size!==values.length){say('Nama posisi tidak boleh duplikat.');return;}
-  try{await savePositionList(values);say('Daftar posisi diperbarui.');loadView('stage2');}catch(error){say(error.message||'Daftar posisi gagal disimpan.');}
- });
-}
-function candidateEditFieldsHtml(applicant) {
- const data=applicant.application_data||{};
- const ignored=new Set(['nama','nik','posisi','ktp_foto','ktp_path']);
- return Object.entries(data).filter(([key])=>!ignored.has(key)&&!key.startsWith('__')).map(([key,value])=>{
-  const label=applicationFieldLabel(key);
-  if(typeof value==='boolean') return `<label class="candidate-edit-field">${esc(label)}<select class="select" data-candidate-data-key="${esc(key)}" data-candidate-data-kind="boolean"><option value="true" ${value?'selected':''}>Ya</option><option value="false" ${!value?'selected':''}>Tidak</option></select></label>`;
-  if(typeof value==='number') return `<label class="candidate-edit-field">${esc(label)}<input class="input" type="number" step="any" data-candidate-data-key="${esc(key)}" data-candidate-data-kind="number" value="${esc(value)}"></label>`;
-  if(value && typeof value==='object') return `<label class="candidate-edit-field candidate-edit-field-wide">${esc(label)}<textarea class="textarea" rows="3" data-candidate-data-key="${esc(key)}" data-candidate-data-kind="json">${esc(JSON.stringify(value,null,2))}</textarea><small>Format JSON — array dan objek akan disimpan sesuai struktur aslinya.</small></label>`;
-  if(value===null) return `<label class="candidate-edit-field">${esc(label)}<input class="input" data-candidate-data-key="${esc(key)}" data-candidate-data-kind="null" value="" placeholder="Kosong / null"></label>`;
-  return `<label class="candidate-edit-field candidate-edit-field-wide">${esc(label)}<textarea class="textarea" rows="2" data-candidate-data-key="${esc(key)}" data-candidate-data-kind="string">${esc(value??'')}</textarea></label>`;
- }).join('');
-}
-
-function candidateEditModal() {
- let modal=$('#candidate-edit-modal');
- if(modal)return modal;
- modal=document.createElement('div');
- modal.id='candidate-edit-modal';modal.className='modal-backdrop hidden';
- modal.innerHTML=`<section class="employee-modal-card candidate-edit-card" role="dialog" aria-modal="true" aria-labelledby="candidate-edit-title">
-  <div class="employee-modal-head"><div><small>REKRUTMEN TAHAP 2</small><h2 id="candidate-edit-title">Edit data kandidat</h2></div><button type="button" class="modal-close" id="candidate-edit-close" aria-label="Tutup">×</button></div>
-  <form id="candidate-edit-form">
-   <div class="candidate-edit-basic-grid">
-    <label>Nama lengkap<input class="input" data-candidate-basic="full_name" required minlength="2" maxlength="120"></label>
-    <label>NIK<input class="input" data-candidate-basic="nik" required inputmode="numeric" maxlength="16" pattern="[0-9]{16}"></label>
-    <label class="candidate-edit-field-wide">Posisi dilamar<input class="input" data-candidate-basic="position" required maxlength="160"></label>
-   </div>
-   <div class="candidate-edit-divider"><b>Data formulir Tahap 2</b><span>Perubahan disimpan ke data lamaran kandidat.</span></div>
-   <div id="candidate-edit-fields" class="candidate-edit-fields"></div>
-   <div id="candidate-edit-error" class="form-error" role="alert"></div>
-   <div class="employee-modal-actions"><button type="button" class="btn btn-secondary" id="candidate-edit-cancel">Batal</button><button type="submit" class="btn btn-primary" id="candidate-edit-save">Simpan perubahan</button></div>
-  </form>
- </section>`;
- document.body.append(modal);
- const close=()=>{modal.classList.add('hidden');editingApplicantId=null;};
- $('#candidate-edit-close',modal).addEventListener('click',close);
- $('#candidate-edit-cancel',modal).addEventListener('click',close);
- modal.addEventListener('click',event=>{if(event.target===modal)close();});
- $('#candidate-edit-form',modal).addEventListener('submit',saveStage2Candidate);
- return modal;
-}
-
-function openStage2CandidateEditor(applicant) {
- const modal=candidateEditModal(),form=$('#candidate-edit-form',modal);
- form.reset();editingApplicantId=applicant.id;
- form.querySelector('[data-candidate-basic="full_name"]').value=applicant.full_name||'';
- form.querySelector('[data-candidate-basic="nik"]').value=applicant.nik||'';
- form.querySelector('[data-candidate-basic="position"]').value=applicant.position||'';
- $('#candidate-edit-title',modal).textContent=`Edit kandidat · ${applicant.full_name||'Tanpa nama'}`;
- $('#candidate-edit-fields',modal).innerHTML=candidateEditFieldsHtml(applicant)||'<p class="subtle">Tidak ada field tambahan pada formulir ini.</p>';
- $('#candidate-edit-error',modal).textContent='';
- modal.classList.remove('hidden');
- form.querySelector('[data-candidate-basic="full_name"]').focus();
-}
-
-async function saveStage2Candidate(event) {
- event.preventDefault();
- const form=event.currentTarget,modal=$('#candidate-edit-modal'),errorBox=$('#candidate-edit-error',modal),save=$('#candidate-edit-save',modal);
- const applicant=applicants.find(item=>item.id===editingApplicantId);
- if(!applicant){errorBox.textContent='Data kandidat tidak ditemukan. Muat ulang halaman.';return;}
- const fullName=form.querySelector('[data-candidate-basic="full_name"]').value.trim();
- const nik=form.querySelector('[data-candidate-basic="nik"]').value.replace(/\D/g,'');
- const position=form.querySelector('[data-candidate-basic="position"]').value.trim();
- if(fullName.length<2){errorBox.textContent='Nama lengkap minimal 2 karakter.';return;}
- if(!/^\d{16}$/.test(nik)){errorBox.textContent='NIK harus tepat 16 angka.';return;}
- if(!position){errorBox.textContent='Posisi dilamar wajib diisi.';return;}
- if(applicants.some(item=>item.id!==applicant.id&&item.nik===nik)){errorBox.textContent='NIK tersebut sudah digunakan kandidat lain.';return;}
- const nextData={...(applicant.application_data||{})};
- try{
-  form.querySelectorAll('[data-candidate-data-key]').forEach(field=>{
-   const key=field.dataset.candidateDataKey,kind=field.dataset.candidateDataKind,value=field.value;
-   if(kind==='boolean')nextData[key]=value==='true';
-   else if(kind==='number')nextData[key]=value.trim()===''?null:Number(value);
-   else if(kind==='json')nextData[key]=JSON.parse(value);
-   else if(kind==='null')nextData[key]=value.trim()===''?null:value;
-   else nextData[key]=value;
-  });
- }catch(parseError){errorBox.textContent=`Periksa format JSON: ${parseError.message}`;return;}
- nextData.nama=fullName;nextData.nik=nik;nextData.posisi=position;
- errorBox.textContent='';save.disabled=true;save.textContent='Menyimpan…';
- try{
-  const {error}=await supabase.from('applicants').update({full_name:fullName,nik,position,application_data:nextData,updated_at:new Date().toISOString()}).eq('id',applicant.id);
-  if(error)throw error;
-  say(`Data ${fullName} berhasil diperbarui.`);
-  modal.classList.add('hidden');editingApplicantId=null;
-  await loadView('stage2');
- }catch(saveError){errorBox.textContent=saveError.message||'Data kandidat gagal disimpan.';}
- finally{save.disabled=false;save.textContent='Simpan perubahan';}
-}
-
-function bindStage2CandidateActions() {
- $$('[data-stage2-edit]').forEach(button=>button.addEventListener('click',()=>{
-  const applicant=applicants.find(item=>item.id===button.dataset.stage2Edit);
-  if(applicant)openStage2CandidateEditor(applicant);
- }));
- $$('[data-stage2-delete]').forEach(button=>button.addEventListener('click',async()=>{
-  const applicant=applicants.find(item=>item.id===button.dataset.stage2Delete);
-  if(!applicant)return;
-  if(employees.some(employee=>employee.applicant_id===applicant.id)){
-   say('Kandidat sudah terhubung dengan Tracking Karyawan. Hapus atau kelola data karyawan terlebih dahulu agar riwayat tetap aman.');return;
-  }
-  const confirmed=window.confirm(`Hapus kandidat ${applicant.full_name} (NIK ${applicant.nik})? Data formulir dan jawaban DISC terkait juga akan dihapus. Tindakan ini tidak dapat dibatalkan.`);
-  if(!confirmed)return;
-  button.disabled=true;button.textContent='Menghapus…';
-  try{
-   const {error}=await supabase.from('applicants').delete().eq('id',applicant.id);
-   if(error)throw error;
-   applicants=applicants.filter(item=>item.id!==applicant.id);
-   const cleanupErrors=[];
-   if(applicant.cv_path){const result=await supabase.storage.from('candidate-files').remove([applicant.cv_path]);if(result.error)cleanupErrors.push('CV');}
-   if(applicant.ktp_path){const result=await supabase.storage.from('candidate-identity').remove([applicant.ktp_path]);if(result.error)cleanupErrors.push('KTP');}
-   say(cleanupErrors.length?`Kandidat terhapus. Berkas ${cleanupErrors.join(' dan ')} perlu dibersihkan melalui Storage.`:`Kandidat ${applicant.full_name} berhasil dihapus.`);
-   await loadView('stage2');
-  }catch(error){button.disabled=false;button.textContent='Hapus';say(error.message||'Kandidat gagal dihapus.');}
- }));
-}
-
-async function renderStage2(){
- const allRows=applicants.filter(row=>row.stage!=='stage1_pending'&&row.stage!=='rejected');
- const positions=await loadPositionList(),keys=stage2FieldKeys(allRows);
- const renderRows=rows=>rows.length?rows.map(row=>stage2RowHtml(row,keys)).join(''):emptyRow(7+keys.length,'Belum ada formulir Tahap 2');
- const columns=['KANDIDAT','POSISI',...keys.map(key=>applicationFieldLabel(key).toLocaleUpperCase('id')),'FOTO KTP','CV','STATUS FORM','BACKGROUND CHECK','AKSI'];
- content.innerHTML=header('Rekrutmen Tahap 2','Seluruh field tersimpan, lampiran KTP/CV, dan kelayakan DISC · NIK adalah identitas utama')+
-  `<section class="panel table-panel stage2-candidate-panel">${tableToolbar('Cari nama / NIK / posisi / data lain…')}
-   <div class="table-wrap recruitment-data-scroll"><table class="data-table recruitment-wide-table"><thead><tr>${columns.map(label=>`<th>${esc(label)}</th>`).join('')}</tr></thead><tbody id="candidate-rows">${renderRows(allRows)}</tbody></table></div></section>`+
-  positionManagerHtml(positions);
- bindPositionManager(positions);
- const repaint=query=>{
-  const filtered=allRows.filter(row=>`${row.full_name} ${row.nik} ${row.position} ${JSON.stringify(row.application_data||{})}`.toLocaleLowerCase('id').includes(query));
-  $('#candidate-rows').innerHTML=renderRows(filtered);bindBackgroundCheck();bindStage2DocumentActions();bindStage2CandidateActions();
- };
- bindSearch('#table-search',repaint);bindBackgroundCheck();bindStage2DocumentActions();bindStage2CandidateActions();
-}
-
-function renderStage3(){
- const rows=applicants.filter(row=>getDiscForApplicant(row)||row.stage==='disc_completed'||row.stage==='hired');
- content.innerHTML=header('Rekrutmen Tahap 3','Grafik DISC dan pola kepribadian dihitung dari rumus DISC Portal Karir')+
-  `<section class="panel table-panel">${tableToolbar()}<div class="table-wrap recruitment-data-scroll"><table class="data-table recruitment-wide-table">
-   <thead><tr><th>KANDIDAT / NIK</th><th>POSISI</th><th>USIA</th><th>STATUS</th><th>GRAFIK DISC (G1 · G2 · G3)</th><th>NAMA KEPRIBADIAN / POLA ALAMI</th><th>AKSI</th></tr></thead>
-   <tbody id="candidate-rows">${applicantRows(rows,'both')}</tbody></table></div></section>`;
- const repaint=query=>{
-  $('#candidate-rows').innerHTML=applicantRows(rows.filter(row=>`${row.full_name} ${row.nik} ${row.position}`.toLocaleLowerCase('id').includes(query)),'both');
-  bindPrint();bindHire();
- };
- bindSearch('#table-search',repaint);bindPrint();bindHire();
-}
-
-function employeeRows(rows) {
-  if (!rows.length) return emptyRow(7);
-  return rows.map(employee => {
-    const applicant = applicants.find(a => a.id === employee.applicant_id);
-    return `<tr>
-      <td><b>${esc(applicant?.full_name || '—')}</b><small class="table-subline">${esc(applicant?.nik || '')}</small></td>
-      <td>${esc(employee.employee_no)}</td><td>${esc(employee.department || '—')}</td>
-      <td>${esc(employee.position || applicant?.position || '—')}</td>
-      <td><span class="status-pill ${employee.employment_status === 'Nonaktif' ? 'gray' : 'green'}">${esc(employee.employment_status)}</span></td>
-      <td data-sort-value="${esc(employee.join_date||'')}">${idDate(employee.join_date)}</td><td><button class="icon-btn" data-edit-employee="${esc(employee.id)}">Edit</button></td>
-    </tr>`;
-  }).join('');
-}
-
-function renderEmployees() {
-  content.innerHTML = header('Tracking Karyawan', 'Data karyawan yang telah dipindahkan dari proses rekrutmen', '<button id="export-employees" class="btn btn-primary">Unduh XLSX ↓</button>') + `
-    <section class="panel table-panel">${tableToolbar('Cari nama / nomor karyawan…')}<div class="table-wrap"><table class="data-table">
-      <thead><tr><th>NAMA KARYAWAN</th><th>NOMOR</th><th>DEPARTEMEN</th><th>POSISI</th><th>STATUS</th><th>TANGGAL MASUK</th><th>AKSI</th></tr></thead>
-      <tbody id="employee-rows">${employeeRows(employees)}</tbody>
-    </table></div></section>`;
-  bindSearch('#table-search', query => {
-    const rows = employees.filter(e => {
-      const a = applicants.find(x => x.id === e.applicant_id);
-      return `${a?.full_name || ''} ${a?.nik || ''} ${e.employee_no} ${e.department || ''} ${e.position || ''}`.toLocaleLowerCase('id').includes(query);
+  const searchInput = $('#vacancy-search');
+  if (searchInput) {
+    searchInput.addEventListener('input', event => {
+      searchQuery = event.target.value.trim().toLocaleLowerCase('id');
+      renderVacancyManager();
+      const restored = $('#vacancy-search');
+      if (restored) {
+        restored.focus();
+        restored.setSelectionRange(restored.value.length, restored.value.length);
+      }
     });
-    $('#employee-rows').innerHTML = employeeRows(rows);
-    bindEmployeeEdit();
-  });
-  $('#export-employees').addEventListener('click', exportEmployees);
-  bindEmployeeEdit();
-}
-
-function renderPrintRows(rows) {
-  if (!rows.length) return emptyRow(5);
-  return rows.map(applicant => {
-    const disc = getDiscForApplicant(applicant);
-    return `<tr><td><b>${esc(applicant.full_name)}</b><small class="table-subline">${esc(applicant.nik)}</small></td>
-      <td>${esc(applicant.position || '—')}</td><td>${statusPill(applicant.stage)}</td>
-      <td>${disc ? '<span class="status-pill green">Lengkap</span>' : '<span class="status-pill gray">Belum ada</span>'}</td>
-      <td><button class="icon-btn" data-print="${esc(applicant.id)}">Cetak Lamaran · CV · DISC</button></td></tr>`;
-  }).join('');
-}
-
-async function loadPrintTemplates() {
-  const { data, error } = await supabase.from('print_templates')
-    .select('id,source_filename,schema_version,is_active,created_at')
-    .order('created_at', { ascending: false }).limit(30);
-  if (error) {
-    printTemplates = [];
-    return error;
   }
-  printTemplates = data || [];
-  return null;
+
+  $('#add-vacancy-btn')?.addEventListener('click', () => openVacancyEditor(null));
+  $('#share-portal-btn')?.addEventListener('click', () => openShareModal(null));
+
+  $$('[data-edit-vacancy]').forEach(btn =>
+    btn.addEventListener('click', () => {
+      const target = vacancies.find(item => item.id === btn.dataset.editVacancy);
+      if (target) openVacancyEditor(target);
+    })
+  );
+
+  $$('[data-share-vacancy]').forEach(btn =>
+    btn.addEventListener('click', () => {
+      const target = vacancies.find(item => item.id === btn.dataset.shareVacancy);
+      if (target) openShareModal(target);
+    })
+  );
+
+  $$('[data-dup-vacancy]').forEach(btn =>
+    btn.addEventListener('click', async () => {
+      const source = vacancies.find(item => item.id === btn.dataset.dupVacancy);
+      if (!source) return;
+      let suffix = 2;
+      let candidateName = `${source.name} (${suffix})`;
+      while (vacancies.some(v => v.name.toLocaleLowerCase('id') === candidateName.toLocaleLowerCase('id'))) {
+        suffix += 1;
+        candidateName = `${source.name} (${suffix})`;
+      }
+      const cloned = normalizeVacancy(
+        {
+          ...structuredClone(source),
+          id: '',
+          name: candidateName
+        },
+        vacancies.length
+      );
+      try {
+        await persistVacancies([...vacancies, cloned]);
+        say(`Lowongan "${cloned.name}" ditambahkan.`);
+        renderVacancyManager();
+      } catch (error) {
+        say(error.message || 'Gagal menduplikasi lowongan.');
+      }
+    })
+  );
+
+  $$('[data-del-vacancy]').forEach(btn =>
+    btn.addEventListener('click', async () => {
+      const target = vacancies.find(item => item.id === btn.dataset.delVacancy);
+      if (!target) return;
+      if (vacancies.length <= 1) {
+        say('Minimal satu lowongan harus dipertahankan.');
+        return;
+      }
+      const remaining = vacancies.filter(v => v.id !== target.id);
+      if (!extractActivePositionNames(remaining).length) {
+        say('Tidak dapat menghapus karena harus ada minimal satu lowongan aktif.');
+        return;
+      }
+      try {
+        await persistVacancies(remaining);
+        say(`Lowongan "${target.name}" dihapus.`);
+        renderVacancyManager();
+      } catch (error) {
+        say(error.message || 'Lowongan gagal dihapus.');
+      }
+    })
+  );
 }
 
-function templateManagerHtml(migrationError = null) {
-  const active = printTemplates.find(t => t.is_active);
-  const currentName = active?.source_filename || 'Master bawaan repository';
-  const history = printTemplates.length ? printTemplates.map(template => `<tr>
-    <td><b>${esc(template.source_filename)}</b><small class="table-subline">${esc(template.schema_version || '—')}</small></td>
-    <td data-sort-value="${esc(template.created_at||'')}">${idDate(template.created_at)}</td>
-    <td>${template.is_active ? '<span class="status-pill green">Aktif</span>' : '<span class="status-pill gray">Arsip</span>'}</td>
-    <td>${template.is_active ? '' : `<button class="icon-btn" data-template-activate="${esc(template.id)}">Jadikan aktif</button>`}</td>
-  </tr>`).join('') : emptyRow(4, 'Belum ada versi master tambahan. Master bawaan tetap digunakan.');
-  const controls = migrationError
-    ? `<div class="form-error template-error">Riwayat master belum tersedia. Jalankan <code>supabase/SETUP-ALL-IN-ONE.sql</code> di Supabase SQL Editor untuk mengaktifkan master versi.</div>`
-    : `<div class="template-current"><div><small>MASTER AKTIF</small><b>${esc(currentName)}</b><span>${active ? `Diperbarui ${idDate(active.created_at)}` : 'Menggunakan file templates/application-master.html'}</span></div>
-        <button class="btn btn-secondary" id="restore-template">Pulihkan master bawaan</button></div>
-      <form id="template-upload-form" class="template-upload">
-        <div class="template-upload-copy"><b>Ganti desain master</b><span>Unggah HTML baru. Field <code>name</code> yang lama wajib dipertahankan.</span></div>
-        <input id="template-file" class="input" type="file" accept=".html,text/html" required>
-        <button class="btn btn-primary" type="submit">Simpan & aktifkan</button>
-      </form>
-      <div class="template-history"><div class="template-history-title">Riwayat versi tersimpan</div><div class="table-wrap"><table class="data-table"><thead><tr><th>FILE MASTER</th><th>TANGGAL</th><th>STATUS</th><th>AKSI</th></tr></thead><tbody>${history}</tbody></table></div></div>`;
-  return `<section class="panel template-manager">
-    <div class="panel-head"><div><h3>Master HTML lamaran</h3><p>Desain dapat diganti tanpa mengubah struktur data formulir</p></div><span class="status-pill ${active ? 'green' : 'blue'}">${active ? 'Versi tersimpan' : 'Master bawaan'}</span></div>
-    <div class="template-manager-body">${controls}</div>
-  </section>`;
-}
+/* ==================== VACANCY EDITOR MODAL ==================== */
 
-function renderPrint() {
-  content.innerHTML = header('Cetak Lamaran', 'Dokumen disusun otomatis: Lamaran · CV · DISC') + `
-    <section class="panel table-panel">${tableToolbar()}<div class="table-wrap"><table class="data-table">
-      <thead><tr><th>KANDIDAT</th><th>POSISI</th><th>TAHAP</th><th>DISC</th><th>DOKUMEN</th></tr></thead>
-      <tbody id="candidate-rows">${renderPrintRows(applicants)}</tbody>
-    </table></div></section>
-    <div id="template-manager-slot"></div>`;
-  bindSearch('#table-search', query => {
-    $('#candidate-rows').innerHTML = renderPrintRows(applicants.filter(a => `${a.full_name} ${a.nik} ${a.position}`.toLocaleLowerCase('id').includes(query)));
-    bindPrint();
-  });
-  bindPrint();
-  loadPrintTemplates().then(error => {
-    const slot = $('#template-manager-slot');
-    if (!slot) return;
-    slot.innerHTML = templateManagerHtml(error);
-    bindTemplateManager(Boolean(error));
-  });
-}
-
-async function renderReports() {
-  const { data: stage1Data, error } = await supabase.from('candidate_stage1_applications')
-    .select('id,position,status,created_at').order('created_at', { ascending: false }).limit(2000);
-  if (error) throw error;
-  const stage1Rows = stage1Data || [];
-  const counts = [
-    ['Lamaran Tahap 1', stage1Rows.length],
-    ['Formulir Tahap 2', applicants.filter(a => ['application_submitted','disc_completed','stage4_pending','hired'].includes(a.stage)).length],
-    ['Background check lolos', applicants.filter(a => a.background_check_status === 'passed').length],
-    ['Tes DISC selesai', applicants.filter(a => Boolean(getDiscForApplicant(a)) || a.stage === 'disc_completed').length],
-    ['Karyawan terdaftar', employees.length],
-    ['Tidak dilanjutkan', applicants.filter(a => a.stage === 'rejected').length]
-  ];
-  const positions = new Map();
-  for (const row of [...stage1Rows, ...applicants]) {
-    const position = String(row.position || 'Belum ditentukan');
-    positions.set(position, (positions.get(position) || 0) + 1);
-  }
-  const safeCsv = value => {
-    const text = String(value ?? '');
-    const protectedText = /^\s*[=+@-]/.test(text) ? "'" + text : text;
-    return '"' + protectedText.replace(/"/g, '""') + '"';
-  };
-  content.innerHTML = header('Laporan Rekrutmen', 'Ringkasan data aktual dari lamaran Tahap 1, kandidat, DISC, dan karyawan',
-    '<button id="export-recruitment-report" class="btn btn-primary">Unduh CSV ↓</button>') + `
-    <div class="stat-grid">${counts.map(([label,value]) => `<article class="stat-card"><div class="stat-top">${esc(label)}</div><div class="stat-number">${value}</div><div class="stat-note">Data tersimpan</div></article>`).join('')}</div>
-    <section class="panel table-panel"><div class="panel-head"><div><h3>Distribusi posisi</h3><p>Gabungan lamaran awal dan formulir kandidat</p></div><span class="status-pill blue">${positions.size} posisi</span></div>
-      <div class="table-wrap"><table class="data-table"><thead><tr><th>POSISI</th><th>JUMLAH</th></tr></thead><tbody>${[...positions.entries()].sort((a,b)=>b[1]-a[1]).map(([name,total])=>`<tr><td>${esc(name)}</td><td>${total}</td></tr>`).join('') || emptyRow(2)}</tbody></table></div></section>
-    <section class="panel table-panel"><div class="panel-head"><div><h3>Catatan laporan</h3><p>Ringkasan dibangun dari data yang saat ini tersimpan</p></div></div><div class="panel-body"><p class="subtle">Lamaran Tahap 1 merupakan alur publik terpisah. Kandidat baru dihitung pada Tahap 2 setelah formulir kandidat lengkap dikirim. Angka tidak menggandakan hasil DISC atau status karyawan.</p></div></section>`;
-  $('#export-recruitment-report').addEventListener('click', () => {
-    const rows = [['Kategori','Jumlah'], ...counts];
-    rows.push([]);
-    rows.push(['Posisi','Jumlah']);
-    for (const [name,total] of positions) rows.push([name,total]);
-    const csv = '\uFEFF' + rows.map(row => row.map(safeCsv).join(',')).join('\r\n');
-    const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = `Laporan_Rekrutmen_${new Date().toISOString().slice(0,10)}.csv`;
-    document.body.append(link);
-    link.click();
-    link.remove();
-    setTimeout(() => URL.revokeObjectURL(url), 1000);
-    say('Laporan CSV berhasil disiapkan.');
-  });
-}
-
-function renderPlaceholder(title, subtitle) {
-  content.innerHTML = header(title, subtitle) + `<section class="panel placeholder-panel"><div><div class="placeholder-symbol">◌</div><h2>Belum tersedia</h2><p>Area ini disiapkan untuk pengembangan berikutnya.</p></div></section>`;
-}
-
-function bindPrint() {
-  $$('[data-print]').forEach(button => {
-    button.addEventListener('click', async () => {
-      const record = applicants.find(a => a.id === button.dataset.print);
-      if (!record) return;
-      const originalText = button.textContent;
-      button.disabled = true;
-      button.textContent = 'Menyiapkan…';
-      try { await printApplication(record); }
-      catch (error) { say(error.message || 'Dokumen tidak dapat disiapkan.'); }
-      finally { button.disabled = false; button.textContent = originalText; }
-    });
-  });
-}
-
-function employeeModal() {
-  let modal = $('#employee-modal');
+function ensureVacancyModal() {
+  let modal = $('#vacancy-editor-modal');
   if (modal) return modal;
   modal = document.createElement('div');
-  modal.id = 'employee-modal';
+  modal.id = 'vacancy-editor-modal';
   modal.className = 'modal-backdrop hidden';
-  modal.innerHTML = `<section class="employee-modal-card" role="dialog" aria-modal="true" aria-labelledby="employee-modal-title">
-    <div class="employee-modal-head"><div><small>TRACKING KARYAWAN</small><h2 id="employee-modal-title">Data karyawan</h2></div><button type="button" class="modal-close" id="employee-modal-close" aria-label="Tutup">×</button></div>
-    <form id="employee-form">
-      <div class="employee-form-grid">
-        <label>Nomor karyawan<input class="input" name="employee_no" required maxlength="40"></label>
-        <label>Departemen<input class="input" name="department" maxlength="120"></label>
-        <label>Posisi<input class="input" name="position" maxlength="120"></label>
-        <label>Status<select class="select" name="employment_status"><option>Aktif</option><option>Probation</option><option>Kontrak</option><option>Tetap</option><option>Nonaktif</option></select></label>
-        <label>Tanggal masuk<input class="input" type="date" name="join_date"></label>
-        <label class="employee-notes">Catatan<textarea class="textarea" name="notes" rows="3" maxlength="2000"></textarea></label>
+  modal.innerHTML = `
+    <section class="employee-modal-card vacancy-modal-card" role="dialog" aria-modal="true" aria-labelledby="vacancy-modal-title">
+      <div class="employee-modal-head">
+        <div>
+          <small>PENGELOLA LOWONGAN</small>
+          <h2 id="vacancy-modal-title">Edit Lowongan</h2>
+        </div>
+        <button type="button" class="modal-close" id="vacancy-modal-close" aria-label="Tutup">×</button>
       </div>
-      <div class="employee-modal-actions"><button type="button" class="btn btn-secondary" id="employee-cancel">Batal</button><button type="submit" class="btn btn-primary" id="employee-save">Simpan data</button></div>
-      <div id="employee-form-error" class="form-error" role="alert"></div>
-    </form>
-  </section>`;
+      <form id="vacancy-editor-form" class="vacancy-modal-form" novalidate>
+        <div class="vacancy-modal-body">
+          <div class="v-form-section">
+            <div class="v-form-section-head"><h3>Posisi</h3></div>
+            <div class="v-grid-2">
+              <div class="v-field">
+                <label for="v-name">Nama Posisi</label>
+                <input id="v-name" class="input" type="text" maxlength="100" required placeholder="Contoh: Operator Spray">
+              </div>
+              <label class="v-check-inline" for="v-active">
+                <input id="v-active" type="checkbox">
+                <span>Aktif di /apply</span>
+              </label>
+            </div>
+          </div>
+
+          <div class="v-form-section">
+            <div class="v-form-section-head"><h3>Lokasi & Skor</h3></div>
+            <div class="v-grid-2" style="margin-bottom:14px">
+              <div class="v-field">
+                <label>Lokasi Utama (Kecamatan Prioritas)</label>
+              </div>
+              <div class="v-field">
+                <label for="v-primary-score">Skor Lokasi Utama</label>
+                <input id="v-primary-score" class="input" type="number" step="any">
+              </div>
+            </div>
+
+            <div class="district-picker-controls">
+              <select id="district-city-filter" class="select" aria-label="Filter kabupaten atau kota">
+                <option value="Semua">Semua Wilayah</option>
+                ${Object.keys(DISTRICTS_BY_CITY).map(city => `<option value="${esc(city)}">${esc(city)}</option>`).join('')}
+              </select>
+              <input id="district-search" class="input" type="search" placeholder="Cari kecamatan…">
+              <button id="district-toggle-visible" type="button" class="btn btn-secondary">Pilih Semua</button>
+            </div>
+            <div id="district-picker-list" class="district-picker-list"></div>
+            <div class="district-custom-row">
+              <input id="district-custom-input" class="input" type="text" maxlength="80" placeholder="Tambah kecamatan / area lain…">
+              <button id="district-custom-add" type="button" class="btn btn-secondary">Tambah</button>
+            </div>
+            <div id="district-selected-tags" class="district-selected-tags"></div>
+
+            <div class="v-grid-2" style="margin-top:16px">
+              <div class="v-field">
+                <label for="v-other-label">Lokasi Lain (Area di luar lokasi utama)</label>
+                <input id="v-other-label" class="input" type="text" maxlength="120" placeholder="Area selain lokasi utama">
+              </div>
+              <div class="v-field">
+                <label for="v-other-score">Skor Lokasi Lain</label>
+                <input id="v-other-score" class="input" type="number" step="any">
+              </div>
+            </div>
+          </div>
+
+          <div class="v-form-section">
+            <div class="v-form-section-head">
+              <h3>Pertanyaan & Skor</h3>
+              <button id="add-question-btn" type="button" class="btn btn-secondary">+ Tambah Pertanyaan</button>
+            </div>
+            <div id="question-builder-list" class="q-builder-list"></div>
+          </div>
+        </div>
+
+        <div class="vacancy-modal-footer">
+          <div id="vacancy-editor-error" class="form-error" role="alert"></div>
+          <div class="employee-modal-actions">
+            <button type="button" class="btn btn-secondary" id="vacancy-modal-cancel">Batal</button>
+            <button type="submit" class="btn btn-primary" id="vacancy-modal-save">Simpan Lowongan</button>
+          </div>
+        </div>
+      </form>
+    </section>
+  `;
   document.body.append(modal);
-  const close = () => { modal.classList.add('hidden'); editingEmployeeId = null; hiringApplicantId = null; };
-  $('#employee-modal-close', modal).addEventListener('click', close);
-  $('#employee-cancel', modal).addEventListener('click', close);
-  modal.addEventListener('click', event => { if (event.target === modal) close(); });
-  $('#employee-form', modal).addEventListener('submit', saveEmployee);
+
+  const close = () => {
+    modal.classList.add('hidden');
+    editingVacancyId = null;
+    draftVacancy = null;
+  };
+  $('#vacancy-modal-close', modal).addEventListener('click', close);
+  $('#vacancy-modal-cancel', modal).addEventListener('click', close);
+  modal.addEventListener('click', event => {
+    if (event.target === modal) close();
+  });
+
+  $('#district-city-filter', modal).addEventListener('change', event => {
+    pickerCityFilter = event.target.value;
+    renderDistrictPicker();
+  });
+  $('#district-search', modal).addEventListener('input', event => {
+    pickerSearch = event.target.value.trim().toLocaleLowerCase('id');
+    renderDistrictPicker();
+  });
+  $('#district-toggle-visible', modal).addEventListener('click', () => {
+    const visibleTokens = getVisibleDistrictTokens();
+    if (!visibleTokens.length || !draftVacancy) return;
+    const set = new Set(draftVacancy.primaryDistricts);
+    const allSelected = visibleTokens.every(token => set.has(token));
+    if (allSelected) {
+      visibleTokens.forEach(token => set.delete(token));
+    } else {
+      visibleTokens.forEach(token => set.add(token));
+    }
+    draftVacancy.primaryDistricts = [...set];
+    renderDistrictPicker();
+  });
+  $('#district-custom-add', modal).addEventListener('click', () => {
+    const input = $('#district-custom-input', modal);
+    const raw = input.value.trim();
+    if (!raw || !draftVacancy) return;
+    const token = pickerCityFilter !== 'Semua' && !raw.includes('-')
+      ? normalizeDistrictToken(pickerCityFilter, raw)
+      : raw;
+    if (!draftVacancy.primaryDistricts.includes(token)) {
+      draftVacancy.primaryDistricts.push(token);
+    }
+    input.value = '';
+    renderDistrictPicker();
+  });
+
+  $('#add-question-btn', modal).addEventListener('click', () => {
+    syncDraftFromEditorDom();
+    draftVacancy.questions.push({
+      id: `pertanyaan_${Date.now()}_${draftVacancy.questions.length + 1}`,
+      label: '',
+      type: 'dropdown',
+      required: true,
+      placeholder: '',
+      filledScore: 0,
+      options: [
+        { label: 'Jawaban A', score: 10 },
+        { label: 'Jawaban B', score: 0 }
+      ]
+    });
+    renderQuestionBuilder();
+  });
+
+  $('#vacancy-editor-form', modal).addEventListener('submit', handleSaveVacancy);
   return modal;
 }
 
-function openEmployeeModal(employee = null, applicant = null) {
-  const modal = employeeModal();
-  const form = $('#employee-form', modal);
-  form.reset();
-  editingEmployeeId = employee?.id || null;
-  hiringApplicantId = applicant?.id || null;
-  const generatedNo = `EMP-${new Date().getFullYear()}-${(applicant?.id || crypto.randomUUID()).slice(0, 8).toUpperCase()}`;
-  form.elements.employee_no.value = employee?.employee_no || generatedNo;
-  form.elements.department.value = employee?.department || '';
-  form.elements.position.value = employee?.position || applicant?.position || '';
-  form.elements.employment_status.value = employee?.employment_status || 'Aktif';
-  form.elements.join_date.value = employee?.join_date || new Date().toISOString().slice(0, 10);
-  form.elements.notes.value = employee?.notes || '';
-  $('#employee-modal-title', modal).textContent = employee ? 'Ubah data karyawan' : `Konversi ${applicant?.full_name || 'kandidat'}`;
-  $('#employee-form-error', modal).textContent = '';
+function getVisibleDistrictTokens() {
+  const tokens = [];
+  for (const [city, list] of Object.entries(DISTRICTS_BY_CITY)) {
+    if (pickerCityFilter !== 'Semua' && pickerCityFilter !== city) continue;
+    for (const dist of list) {
+      const token = normalizeDistrictToken(city, dist);
+      if (!pickerSearch || token.toLocaleLowerCase('id').includes(pickerSearch)) {
+        tokens.push(token);
+      }
+    }
+  }
+  return tokens;
+}
+
+function renderDistrictPicker() {
+  if (!draftVacancy) return;
+  const listHost = $('#district-picker-list');
+  const tagsHost = $('#district-selected-tags');
+  const toggleBtn = $('#district-toggle-visible');
+  if (!listHost || !tagsHost) return;
+
+  const selected = new Set(draftVacancy.primaryDistricts);
+  const visible = getVisibleDistrictTokens();
+
+  if (toggleBtn) {
+    const allSelected = visible.length > 0 && visible.every(t => selected.has(t));
+    toggleBtn.textContent = allSelected ? 'Kosongkan' : 'Pilih Semua';
+  }
+
+  listHost.innerHTML = visible.length
+    ? visible
+        .map(token => `<label class="district-chip">
+          <input type="checkbox" value="${esc(token)}" ${selected.has(token) ? 'checked' : ''}>
+          <span>${esc(token)}</span>
+        </label>`)
+        .join('')
+    : '<div class="loc-empty">Kecamatan tidak ditemukan.</div>';
+
+  $$('input[type="checkbox"]', listHost).forEach(cb =>
+    cb.addEventListener('change', () => {
+      if (!draftVacancy) return;
+      const set = new Set(draftVacancy.primaryDistricts);
+      if (cb.checked) set.add(cb.value);
+      else set.delete(cb.value);
+      draftVacancy.primaryDistricts = [...set];
+      renderDistrictSelectedTags();
+      if (toggleBtn) {
+        const allSelected = visible.length > 0 && visible.every(t => set.has(t));
+        toggleBtn.textContent = allSelected ? 'Kosongkan' : 'Pilih Semua';
+      }
+    })
+  );
+
+  renderDistrictSelectedTags();
+}
+
+function renderDistrictSelectedTags() {
+  const tagsHost = $('#district-selected-tags');
+  if (!tagsHost || !draftVacancy) return;
+  tagsHost.innerHTML = draftVacancy.primaryDistricts.length
+    ? draftVacancy.primaryDistricts
+        .map(token => `<span class="district-selected-tag">${esc(token)} <button type="button" data-remove-district="${esc(token)}" aria-label="Hapus ${esc(token)}">×</button></span>`)
+        .join('')
+    : '<span class="loc-empty">Belum ada lokasi utama dipilih.</span>';
+
+  $$('[data-remove-district]', tagsHost).forEach(btn =>
+    btn.addEventListener('click', () => {
+      const target = btn.dataset.removeDistrict;
+      draftVacancy.primaryDistricts = draftVacancy.primaryDistricts.filter(item => item !== target);
+      renderDistrictPicker();
+    })
+  );
+}
+
+function syncDraftFromEditorDom() {
+  if (!draftVacancy) return;
+  const modal = $('#vacancy-editor-modal');
+  if (!modal) return;
+  draftVacancy.name = $('#v-name', modal)?.value ?? draftVacancy.name;
+  draftVacancy.active = $('#v-active', modal)?.checked ?? draftVacancy.active;
+  draftVacancy.primaryLocationScore = Number($('#v-primary-score', modal)?.value ?? 0);
+  draftVacancy.otherLocationLabel = $('#v-other-label', modal)?.value ?? 'Area selain lokasi utama';
+  draftVacancy.otherLocationScore = Number($('#v-other-score', modal)?.value ?? 0);
+
+  const cards = $$('.q-builder-item', modal);
+  draftVacancy.questions = cards.map((card, idx) => {
+    const existing = draftVacancy.questions[idx] || {};
+    const type = $('[data-q-field="type"]', card)?.value || existing.type || 'text';
+    const label = $('[data-q-field="label"]', card)?.value ?? existing.label ?? '';
+    const required = $('[data-q-field="required"]', card)?.checked ?? true;
+    const hasOptions = type === 'dropdown' || type === 'radio' || type === 'checkbox';
+
+    let options = existing.options || [];
+    if (hasOptions) {
+      const optRows = $$('.q-option-row', card);
+      if (optRows.length) {
+        options = optRows.map(row => ({
+          label: $('[data-opt-label]', row)?.value ?? '',
+          score: Number($('[data-opt-score]', row)?.value ?? 0)
+        }));
+      } else if (!options.length) {
+        options = [
+          { label: 'Jawaban A', score: 10 },
+          { label: 'Jawaban B', score: 0 }
+        ];
+      }
+    }
+
+    return {
+      id: existing.id || '',
+      label,
+      type,
+      required,
+      placeholder: $('[data-q-field="placeholder"]', card)?.value ?? existing.placeholder ?? '',
+      filledScore: hasOptions ? 0 : Number($('[data-q-field="filledScore"]', card)?.value ?? existing.filledScore ?? 0),
+      options: hasOptions ? options : []
+    };
+  });
+}
+
+function renderQuestionBuilder() {
+  const host = $('#question-builder-list');
+  if (!host || !draftVacancy) return;
+
+  if (!draftVacancy.questions.length) {
+    host.innerHTML = '<div class="loc-empty">Belum ada pertanyaan. Klik "+ Tambah Pertanyaan" untuk menambahkan.</div>';
+    return;
+  }
+
+  host.innerHTML = draftVacancy.questions
+    .map((q, qIdx) => {
+      const hasOptions = q.type === 'dropdown' || q.type === 'radio' || q.type === 'checkbox';
+      const optionsHtml = hasOptions
+        ? `<div class="q-options-box">
+            <div class="q-options-head"><span>Pilihan Jawaban</span><span>Skor</span><span></span></div>
+            ${(q.options || [])
+              .map(
+                (opt, optIdx) => `<div class="q-option-row" data-opt-idx="${optIdx}">
+                  <input class="input" type="text" data-opt-label value="${esc(opt.label)}" placeholder="Teks jawaban">
+                  <input class="input" type="number" step="any" data-opt-score value="${esc(opt.score ?? 0)}" aria-label="Skor jawaban">
+                  <button type="button" class="q-option-del" data-del-opt="${qIdx}:${optIdx}" title="Hapus jawaban" ${(q.options || []).length <= 1 ? 'disabled' : ''}>×</button>
+                </div>`
+              )
+              .join('')}
+            <button type="button" class="icon-btn" data-add-opt="${qIdx}" style="margin-top:4px">+ Tambah Jawaban</button>
+          </div>`
+        : `<div class="q-nonoption-box">
+            <div class="v-field">
+              <label>Placeholder</label>
+              <input class="input" type="text" data-q-field="placeholder" value="${esc(q.placeholder || '')}" placeholder="Contoh jawaban singkat">
+            </div>
+            <div class="v-field">
+              <label>Skor jika diisi</label>
+              <input class="input" type="number" step="any" data-q-field="filledScore" value="${esc(q.filledScore ?? 0)}">
+            </div>
+          </div>`;
+
+      return `<div class="q-builder-item" data-q-idx="${qIdx}">
+        <div class="q-builder-top">
+          <span class="q-builder-index">Pertanyaan ${qIdx + 1}</span>
+          <div class="q-builder-controls">
+            <button type="button" class="icon-btn" data-move-q="${qIdx}:-1" ${qIdx === 0 ? 'disabled' : ''} title="Naik">↑</button>
+            <button type="button" class="icon-btn" data-move-q="${qIdx}:1" ${qIdx === draftVacancy.questions.length - 1 ? 'disabled' : ''} title="Turun">↓</button>
+            <button type="button" class="icon-btn danger-action" data-del-q="${qIdx}">Hapus</button>
+          </div>
+        </div>
+        <div class="q-builder-fields">
+          <div class="v-field">
+            <label>Pertanyaan</label>
+            <input class="input" type="text" data-q-field="label" value="${esc(q.label)}" placeholder="Tulis pertanyaan untuk kandidat">
+          </div>
+          <div class="v-field">
+            <label>Tipe Input</label>
+            <select class="select" data-q-field="type">
+              ${QUESTION_TYPES.map(t => `<option value="${esc(t.value)}" ${q.type === t.value ? 'selected' : ''}>${esc(t.label)}</option>`).join('')}
+            </select>
+          </div>
+          <label class="v-check-inline">
+            <input type="checkbox" data-q-field="required" ${q.required !== false ? 'checked' : ''}>
+            <span>Wajib</span>
+          </label>
+        </div>
+        ${optionsHtml}
+      </div>`;
+    })
+    .join('');
+
+  $$('[data-q-field="type"]', host).forEach(select =>
+    select.addEventListener('change', () => {
+      syncDraftFromEditorDom();
+      renderQuestionBuilder();
+    })
+  );
+
+  $$('[data-move-q]', host).forEach(btn =>
+    btn.addEventListener('click', () => {
+      syncDraftFromEditorDom();
+      const [idxStr, deltaStr] = btn.dataset.moveQ.split(':');
+      const idx = Number(idxStr);
+      const targetIdx = idx + Number(deltaStr);
+      if (targetIdx < 0 || targetIdx >= draftVacancy.questions.length) return;
+      const [moved] = draftVacancy.questions.splice(idx, 1);
+      draftVacancy.questions.splice(targetIdx, 0, moved);
+      renderQuestionBuilder();
+    })
+  );
+
+  $$('[data-del-q]', host).forEach(btn =>
+    btn.addEventListener('click', () => {
+      syncDraftFromEditorDom();
+      const idx = Number(btn.dataset.delQ);
+      draftVacancy.questions.splice(idx, 1);
+      renderQuestionBuilder();
+    })
+  );
+
+  $$('[data-add-opt]', host).forEach(btn =>
+    btn.addEventListener('click', () => {
+      syncDraftFromEditorDom();
+      const idx = Number(btn.dataset.addOpt);
+      const q = draftVacancy.questions[idx];
+      if (!q) return;
+      q.options = q.options || [];
+      const letter = String.fromCharCode(65 + (q.options.length % 26));
+      q.options.push({ label: `Jawaban ${letter}`, score: 0 });
+      renderQuestionBuilder();
+    })
+  );
+
+  $$('[data-del-opt]', host).forEach(btn =>
+    btn.addEventListener('click', () => {
+      syncDraftFromEditorDom();
+      const [qIdx, optIdx] = btn.dataset.delOpt.split(':').map(Number);
+      const q = draftVacancy.questions[qIdx];
+      if (!q || !Array.isArray(q.options) || q.options.length <= 1) return;
+      q.options.splice(optIdx, 1);
+      renderQuestionBuilder();
+    })
+  );
+}
+
+function openVacancyEditor(vacancy = null) {
+  const modal = ensureVacancyModal();
+  editingVacancyId = vacancy?.id || null;
+  pickerCityFilter = 'Semua';
+  pickerSearch = '';
+
+  draftVacancy = vacancy
+    ? structuredClone(vacancy)
+    : {
+        id: '',
+        name: '',
+        active: true,
+        primaryDistricts: ['Pasuruan - Purwosari', 'Pasuruan - Purwodadi', 'Pasuruan - Sukorejo', 'Pasuruan - Pandaan', 'Pasuruan - Prigen'],
+        primaryLocationScore: 10,
+        otherLocationLabel: 'Area selain lokasi utama',
+        otherLocationScore: 5,
+        questions: [
+          {
+            id: 'pengalaman_utama',
+            label: 'Berapa lama pengalaman di bidang ini?',
+            type: 'dropdown',
+            required: true,
+            placeholder: '',
+            filledScore: 0,
+            options: [
+              { label: 'Lebih dari 6 bulan', score: 15 },
+              { label: 'Kurang dari 6 bulan', score: 5 }
+            ]
+          },
+          {
+            id: 'penjelasan',
+            label: 'Jelaskan pengalaman kerja sebelumnya',
+            type: 'textarea',
+            required: true,
+            placeholder: 'Perusahaan, tugas, dan keahlian',
+            filledScore: 5,
+            options: []
+          }
+        ]
+      };
+
+  $('#vacancy-modal-title', modal).textContent = vacancy ? `Edit · ${vacancy.name}` : 'Tambah Lowongan Baru';
+  $('#v-name', modal).value = draftVacancy.name || '';
+  $('#v-active', modal).checked = draftVacancy.active !== false;
+  $('#v-primary-score', modal).value = String(draftVacancy.primaryLocationScore ?? 0);
+  $('#v-other-label', modal).value = draftVacancy.otherLocationLabel || 'Area selain lokasi utama';
+  $('#v-other-score', modal).value = String(draftVacancy.otherLocationScore ?? 0);
+  $('#district-city-filter', modal).value = 'Semua';
+  $('#district-search', modal).value = '';
+  $('#district-custom-input', modal).value = '';
+  $('#vacancy-editor-error', modal).textContent = '';
+
+  renderDistrictPicker();
+  renderQuestionBuilder();
+
   modal.classList.remove('hidden');
-  form.elements.employee_no.focus();
+  $('#v-name', modal).focus();
 }
 
-async function saveEmployee(event) {
+async function handleSaveVacancy(event) {
   event.preventDefault();
-  const form = event.currentTarget;
-  const saveButton = $('#employee-save');
-  const errorBox = $('#employee-form-error');
-  const fields = Object.fromEntries(new FormData(form).entries());
+  if (!draftVacancy) return;
+  const modal = $('#vacancy-editor-modal');
+  const errorBox = $('#vacancy-editor-error', modal);
+  const saveBtn = $('#vacancy-modal-save', modal);
   errorBox.textContent = '';
-  saveButton.disabled = true;
-  saveButton.textContent = 'Menyimpan…';
-  try {
-    if (editingEmployeeId) {
-      const { error } = await supabase.from('employees').update({
-        employee_no: fields.employee_no.trim(), department: fields.department.trim(),
-        position: fields.position.trim(), employment_status: fields.employment_status,
-        join_date: fields.join_date || null, notes: fields.notes.trim(), updated_at: new Date().toISOString()
-      }).eq('id', editingEmployeeId);
-      if (error) throw error;
-      say('Data karyawan diperbarui.');
-    } else if (hiringApplicantId) {
-      const { error } = await supabase.rpc('convert_applicant_to_employee', {
-        p_applicant_id: hiringApplicantId,
-        p_employee_no: fields.employee_no.trim(),
-        p_department: fields.department.trim(),
-        p_position: fields.position.trim(),
-        p_employment_status: fields.employment_status,
-        p_join_date: fields.join_date || null,
-        p_notes: fields.notes.trim()
-      });
-      if (error) throw error;
-      const applicant = applicants.find(a => a.id === hiringApplicantId);
-      say(`${applicant?.full_name || 'Kandidat'} ditambahkan ke tracking karyawan.`);
+
+  syncDraftFromEditorDom();
+
+  const cleanName = String(draftVacancy.name || '').trim();
+  if (!cleanName) {
+    errorBox.textContent = 'Nama posisi wajib diisi.';
+    $('#v-name', modal)?.focus();
+    return;
+  }
+
+  const duplicate = vacancies.some(
+    v => v.id !== editingVacancyId && v.name.toLocaleLowerCase('id') === cleanName.toLocaleLowerCase('id')
+  );
+  if (duplicate) {
+    errorBox.textContent = 'Nama posisi sudah digunakan lowongan lain.';
+    return;
+  }
+
+  for (let i = 0; i < draftVacancy.questions.length; i++) {
+    const q = draftVacancy.questions[i];
+    if (!String(q.label || '').trim()) {
+      errorBox.textContent = `Teks Pertanyaan ${i + 1} belum diisi.`;
+      return;
     }
-    $('#employee-modal').classList.add('hidden');
-    editingEmployeeId = null;
-    hiringApplicantId = null;
-    await loadView(activeView === 'employees' ? 'employees' : 'stage3');
-  } catch (error) {
-    errorBox.textContent = error.message || 'Data gagal disimpan.';
-  } finally {
-    saveButton.disabled = false;
-    saveButton.textContent = 'Simpan data';
-  }
-}
-
-function bindHire() {
-  $$('[data-hire]').forEach(button => button.addEventListener('click', () => {
-    const applicant = applicants.find(a => a.id === button.dataset.hire);
-    if (applicant) openEmployeeModal(null, applicant);
-  }));
-}
-function bindEmployeeEdit() {
-  $$('[data-edit-employee]').forEach(button => button.addEventListener('click', () => {
-    const employee = employees.find(e => e.id === button.dataset.editEmployee);
-    if (employee) openEmployeeModal(employee);
-  }));
-}
-
-function cellText(value) {
-  if (value === null || value === undefined) return '';
-  if (typeof value === 'object') return JSON.stringify(value);
-  return String(value);
-}
-
-async function exportEmployees() {
-  const button = $('#export-employees');
-  button.disabled = true;
-  button.textContent = 'Menyiapkan XLSX…';
-  try {
-    const XLSX = await import('https://cdn.jsdelivr.net/npm/xlsx@0.18.5/+esm');
-    const employeeRowsData = employees.map(employee => {
-      const applicant = applicants.find(a => a.id === employee.applicant_id);
-      const data = applicant?.application_data || {};
-      return {
-        'Nomor Karyawan': employee.employee_no,
-        'Nama Lengkap': applicant?.full_name || data.nama || '',
-        'NIK': applicant?.nik || data.nik || '',
-        'Posisi': employee.position || applicant?.position || '',
-        'Departemen': employee.department || '',
-        'Status Karyawan': employee.employment_status || '',
-        'Tanggal Masuk': employee.join_date || '',
-        'Tanggal Dibuat': employee.created_at || '',
-        'Catatan HR': employee.notes || ''
-      };
-    });
-    const applicationRows = employees.map(employee => {
-      const applicant = applicants.find(a => a.id === employee.applicant_id);
-      const data = applicant?.application_data || {};
-      const standard = {
-        'Nomor Karyawan': employee.employee_no,
-        'Nama Lengkap': applicant?.full_name || data.nama || '',
-        'NIK': applicant?.nik || data.nik || '',
-        'Posisi Dilamar': applicant?.position || data.posisi || ''
-      };
-      const extra = Object.fromEntries(Object.entries(data).map(([key, value]) => [key, cellText(value)]));
-      return { ...standard, ...extra };
-    });
-    const workbook = XLSX.utils.book_new();
-    const employeeHeaders = [...new Set(employeeRowsData.flatMap(row => Object.keys(row)))];
-    const employeeSheet = XLSX.utils.json_to_sheet(employeeRowsData, { header: employeeHeaders });
-    employeeSheet['!cols'] = employeeHeaders.map(key => ({ wch: Math.min(34, Math.max(14, key.length + 4)) }));
-    XLSX.utils.book_append_sheet(workbook, employeeSheet, 'Karyawan');
-
-    const appHeaders = [...new Set(applicationRows.flatMap(row => Object.keys(row)))];
-    if (appHeaders.length) {
-      const applicationSheet = XLSX.utils.json_to_sheet(applicationRows, { header: appHeaders });
-      applicationSheet['!cols'] = appHeaders.map(key => ({ wch: Math.min(34, Math.max(14, key.length + 4)) }));
-      XLSX.utils.book_append_sheet(workbook, applicationSheet, 'Data Lamaran');
+    if (['dropdown', 'radio', 'checkbox'].includes(q.type)) {
+      const validOpts = (q.options || []).filter(o => String(o.label || '').trim());
+      if (!validOpts.length) {
+        errorBox.textContent = `Pertanyaan ${i + 1} memerlukan minimal satu pilihan jawaban.`;
+        return;
+      }
     }
-    XLSX.writeFile(workbook, `Data_Karyawan_${new Date().toISOString().slice(0, 10)}.xlsx`);
-    say(`${employees.length} data karyawan diekspor ke XLSX.`);
+  }
+
+  const normalized = normalizeVacancy(
+    {
+      ...draftVacancy,
+      id: editingVacancyId || ''
+    },
+    vacancies.length
+  );
+
+  const nextList = editingVacancyId
+    ? vacancies.map(v => (v.id === editingVacancyId ? normalized : v))
+    : [...vacancies, normalized];
+
+  saveBtn.disabled = true;
+  saveBtn.textContent = 'Menyimpan…';
+  try {
+    await persistVacancies(nextList);
+    modal.classList.add('hidden');
+    editingVacancyId = null;
+    draftVacancy = null;
+    say(`Lowongan "${normalized.name}" disimpan.`);
+    renderVacancyManager();
   } catch (error) {
-    say(error.message || 'File XLSX gagal dibuat.');
+    errorBox.textContent = error.message || 'Gagal menyimpan lowongan.';
   } finally {
-    button.disabled = false;
-    button.textContent = 'Unduh XLSX ↓';
+    saveBtn.disabled = false;
+    saveBtn.textContent = 'Simpan Lowongan';
   }
 }
 
-function sanitizeAndValidateTemplate(html, baselineHtml) {
-  const parser = new DOMParser();
-  const candidateDoc = parser.parseFromString(html, 'text/html');
-  const baselineDoc = parser.parseFromString(baselineHtml, 'text/html');
-  const form = candidateDoc.querySelector('#applicationForm');
-  if (!form) throw new Error('Master HTML wajib memiliki form dengan id="applicationForm".');
-  const baselineNames = new Set([...baselineDoc.querySelectorAll('#applicationForm [name]')].map(el => el.getAttribute('name')).filter(Boolean));
-  const newNames = new Set([...form.querySelectorAll('[name]')].map(el => el.getAttribute('name')).filter(Boolean));
-  const missing = [...baselineNames].filter(name => !newNames.has(name));
-  if (missing.length) {
-    const preview = missing.slice(0, 8).join(', ');
-    throw new Error(`Master baru menghilangkan ${missing.length} field lama (${preview}${missing.length > 8 ? ', …' : ''}). Semua atribut name harus dipertahankan.`);
-  }
-  candidateDoc.querySelectorAll('script,iframe,object,embed,base,meta[http-equiv=refresh]').forEach(el => el.remove());
-  candidateDoc.querySelectorAll('*').forEach(el => {
-    [...el.attributes].forEach(attr => {
-      if (/^on/i.test(attr.name)) el.removeAttribute(attr.name);
-      if (['href', 'src', 'action', 'formaction'].includes(attr.name.toLowerCase()) && /^\s*javascript:/i.test(attr.value)) el.removeAttribute(attr.name);
-    });
+/* ==================== SHARE LINK MODAL ==================== */
+
+function ensureShareModal() {
+  let modal = $('#share-vacancy-modal');
+  if (modal) return modal;
+  modal = document.createElement('div');
+  modal.id = 'share-vacancy-modal';
+  modal.className = 'modal-backdrop hidden';
+  modal.innerHTML = `
+    <section class="employee-modal-card vacancy-modal-card share-modal-card" role="dialog" aria-modal="true" aria-labelledby="share-modal-title">
+      <div class="employee-modal-head">
+        <div>
+          <small>SEBAR LOWONGAN</small>
+          <h2 id="share-modal-title">Bagikan Link Lamaran</h2>
+        </div>
+        <button type="button" class="modal-close" id="share-modal-close" aria-label="Tutup">×</button>
+      </div>
+      <div class="vacancy-modal-body">
+        <div class="v-grid-eq">
+          <div class="v-field">
+            <label for="share-position">Lowongan / Posisi</label>
+            <select id="share-position" class="select"></select>
+          </div>
+          <div class="v-field">
+            <label for="share-source">Tag Sumber Informasi</label>
+            <select id="share-source" class="select"></select>
+          </div>
+        </div>
+
+        <div class="v-form-section">
+          <div class="v-form-section-head"><h3>Link Tahap 1 (/apply)</h3></div>
+          <div id="share-apply-url" class="share-preview-box"></div>
+          <div class="share-actions-row">
+            <button type="button" class="btn btn-primary" id="copy-apply-url">Salin Link /apply</button>
+            <a id="open-apply-url" class="btn btn-secondary" target="_blank" rel="noopener noreferrer">Buka /apply ↗</a>
+          </div>
+        </div>
+
+        <div class="v-form-section">
+          <div class="v-form-section-head"><h3>Link Formulir Lengkap (/form)</h3></div>
+          <div id="share-form-url" class="share-preview-box"></div>
+          <div class="share-actions-row">
+            <button type="button" class="btn btn-secondary" id="copy-form-url">Salin Link /form</button>
+            <a id="open-form-url" class="btn btn-secondary" target="_blank" rel="noopener noreferrer">Buka /form ↗</a>
+          </div>
+        </div>
+      </div>
+    </section>
+  `;
+  document.body.append(modal);
+
+  const close = () => modal.classList.add('hidden');
+  $('#share-modal-close', modal).addEventListener('click', close);
+  modal.addEventListener('click', event => {
+    if (event.target === modal) close();
   });
-  candidateDoc.querySelectorAll('form').forEach(el => el.removeAttribute('action'));
-  return {
-    html: '<!doctype html>\n' + candidateDoc.documentElement.outerHTML,
-    schemaVersion: candidateDoc.querySelector('meta[name="form-schema-version"]')?.content || 'custom'
+
+  const updateUrls = () => {
+    const position = $('#share-position', modal).value;
+    const source = $('#share-source', modal).value;
+    const applySource = APPLY_INFO_SOURCES.includes(source) ? source : '';
+    const applyHref = buildShareUrl(new URL('apply/', location.href).href, position, applySource);
+    const formHref = buildShareUrl(new URL('form/', location.href).href, position, source);
+    $('#share-apply-url', modal).textContent = applyHref;
+    $('#open-apply-url', modal).href = applyHref;
+    $('#share-form-url', modal).textContent = formHref;
+    $('#open-form-url', modal).href = formHref;
   };
-}
 
-async function storeAndActivateTemplate(html, filename) {
-  const [baselineResponse] = await Promise.all([fetch(TEMPLATE_URL, { cache: 'no-store' })]);
-  if (!baselineResponse.ok) throw new Error('Master bawaan tidak dapat dimuat untuk validasi field.');
-  const baselineHtml = await baselineResponse.text();
-  const validated = sanitizeAndValidateTemplate(html, baselineHtml);
-  const { data, error } = await supabase.from('print_templates').insert({
-    source_filename: filename,
-    schema_version: validated.schemaVersion,
-    html_content: validated.html,
-    is_active: false,
-    uploaded_by: currentUserId
-  }).select('id').single();
-  if (error) throw error;
-  const { error: activateError } = await supabase.rpc('activate_print_template', { p_template_id: data.id });
-  if (activateError) throw activateError;
-}
+  $('#share-position', modal).addEventListener('change', updateUrls);
+  $('#share-source', modal).addEventListener('change', updateUrls);
 
-function bindTemplateManager(migrationMissing) {
-  if (migrationMissing) return;
-  $('#template-upload-form')?.addEventListener('submit', async event => {
-    event.preventDefault();
-    const form = event.currentTarget;
-    const file = $('#template-file').files?.[0];
-    const button = form.querySelector('button[type="submit"]');
-    if (!file) return;
-    if (!/\.html?$/i.test(file.name) && file.type !== 'text/html') { say('Pilih file HTML.'); return; }
-    if (file.size > 300 * 1024) { say('Ukuran master HTML maksimal 300 KB.'); return; }
-    button.disabled = true; button.textContent = 'Memvalidasi…';
-    try {
-      await storeAndActivateTemplate(await file.text(), file.name);
-      say('Master HTML baru berhasil diaktifkan.');
-      await loadView('print');
-    } catch (error) { say(error.message || 'Master HTML gagal disimpan.'); }
-    finally { button.disabled = false; button.textContent = 'Simpan & aktifkan'; }
+  $('#copy-apply-url', modal).addEventListener('click', async () => {
+    const url = $('#share-apply-url', modal).textContent;
+    await copyText(url);
+    say('Link /apply berhasil disalin.');
   });
-  $('#restore-template')?.addEventListener('click', async () => {
-    const button = $('#restore-template');
-    button.disabled = true; button.textContent = 'Memulihkan…';
-    try {
-      const response = await fetch(TEMPLATE_URL, { cache: 'no-store' });
-      if (!response.ok) throw new Error('Master bawaan tidak ditemukan.');
-      await storeAndActivateTemplate(await response.text(), 'Master bawaan repository');
-      say('Master bawaan berhasil diaktifkan.');
-      await loadView('print');
-    } catch (error) { say(error.message || 'Master bawaan gagal diaktifkan.'); }
-    finally { button.disabled = false; button.textContent = 'Pulihkan master bawaan'; }
+  $('#copy-form-url', modal).addEventListener('click', async () => {
+    const url = $('#share-form-url', modal).textContent;
+    await copyText(url);
+    say('Link /form berhasil disalin.');
   });
-  $$('[data-template-activate]').forEach(button => button.addEventListener('click', async () => {
-    button.disabled = true;
-    try {
-      const { error } = await supabase.rpc('activate_print_template', { p_template_id: button.dataset.templateActivate });
-      if (error) throw error;
-      say('Versi master berhasil diaktifkan.');
-      await loadView('print');
-    } catch (error) { say(error.message || 'Versi master gagal diaktifkan.'); button.disabled = false; }
-  }));
+
+  modal._updateUrls = updateUrls;
+  return modal;
 }
 
-async function loadView(view) {
-  activeView = view;
-  $$('.nav-item').forEach(button => button.classList.toggle('active', button.dataset.view === view));
-  $('#page-title').textContent = TITLES[view] || 'Dashboard';
-  content.innerHTML = '<section class="panel placeholder-panel"><div><div class="placeholder-symbol">◌</div><h2>Memuat data</h2></div></section>';
-  try {
-    await refreshData();
-    if (view === 'dashboard') renderDashboard();
-    else if (view === 'stage1') await renderStage1();
-    else if (view === 'stage2') renderStage2();
-    else if (view === 'stage3') renderStage3();
-    else if (view === 'employees') renderEmployees();
-    else if (view === 'print') renderPrint();
-    else if (view === 'settings') await renderSettings();
-    else if (view === 'reports') await renderReports();
-    else renderPlaceholder('Halaman tidak ditemukan', 'Menu tidak dikenali');
-  } catch (error) {
-    content.innerHTML = `<section class="panel placeholder-panel"><div><div class="placeholder-symbol">!</div><h2>Data tidak dapat dimuat</h2><p>${esc(error.message || 'Periksa koneksi Supabase.')}</p><button id="retry-load" class="btn btn-secondary" style="margin-top:18px">Coba lagi</button></div></section>`;
-    $('#retry-load')?.addEventListener('click', () => loadView(view));
-  }
+function openShareModal(vacancy = null) {
+  const modal = ensureShareModal();
+  const activeVacancies = vacancies.filter(v => v.active !== false);
+  const posSelect = $('#share-position', modal);
+  const srcSelect = $('#share-source', modal);
+
+  posSelect.innerHTML =
+    '<option value="">Semua Lowongan</option>' +
+    activeVacancies.map(v => `<option value="${esc(v.name)}">${esc(v.name)}</option>`).join('');
+  posSelect.value = vacancy && vacancy.active !== false ? vacancy.name : '';
+
+  srcSelect.innerHTML =
+    '<option value="">Tanpa tag sumber</option>' +
+    FORM_INFO_SOURCES.map(src => `<option value="${esc(src)}">${esc(src)}</option>`).join('');
+  srcSelect.value = '';
+
+  modal._updateUrls();
+  modal.classList.remove('hidden');
 }
+
+/* ==================== LIGHTWEIGHT AUTH & BOOT ==================== */
 
 async function openAdmin(session) {
   const { data: isAdmin, error } = await supabase.rpc('is_portal_admin');
-  if (error) {
+  if (error || !isAdmin) {
     await supabase.auth.signOut();
-    console.error('Portal admin access check failed:', error);
-    throw new Error('Login berhasil, tetapi pemeriksaan akses admin gagal. Pastikan supabase/SETUP-ALL-IN-ONE.sql sudah berhasil dijalankan di Supabase SQL Editor.');
+    throw new Error('Akses admin tidak valid atau belum aktif.');
   }
-  if (!isAdmin) {
-    await supabase.auth.signOut();
-    throw new Error('Akun berhasil login, tetapi hak akses HR belum aktif. Pastikan username telah terdaftar pada admin_login_credentials melalui SETUP-ALL-IN-ONE.sql.');
-  }
-  currentUserId = session.user.id;
-  const { data: profile } = await supabase.from('admin_users').select('display_name').eq('user_id', session.user.id).maybeSingle();
-  adminDisplayName = profile?.display_name || session.user.email || 'HR Admin';
-  $('#admin-name').textContent = adminDisplayName;
+
+  currentAccessToken = session.access_token || '';
+  const { data: profile } = await supabase
+    .from('admin_users')
+    .select('display_name')
+    .eq('user_id', session.user.id)
+    .maybeSingle();
+
+  $('#admin-name').textContent = profile?.display_name || session.user.email || 'HR Admin';
   loginView.classList.add('hidden');
   shell.classList.remove('hidden');
-  await loadView('dashboard');
+
+  content.innerHTML = '<div class="vacancy-card-m"><div class="table-empty">Memuat daftar lowongan…</div></div>';
+  try {
+    await fetchVacancyData();
+    renderVacancyManager();
+  } catch (loadError) {
+    content.innerHTML = `<div class="vacancy-card-m">
+      <div class="table-empty">${esc(loadError.message || 'Gagal memuat daftar lowongan.')}</div>
+      <div style="text-align:center;margin-top:12px">
+        <button id="retry-vacancies" class="btn btn-secondary" type="button">Muat Ulang</button>
+      </div>
+    </div>`;
+    $('#retry-vacancies')?.addEventListener('click', () => openAdmin(session));
+  }
 }
 
 $('#login-form').addEventListener('submit', async event => {
@@ -939,13 +1052,17 @@ $('#login-form').addEventListener('submit', async event => {
   const errorBox = $('#login-error');
   const button = event.currentTarget.querySelector('button[type="submit"]');
   errorBox.textContent = '';
-  if (!isConfigured) { errorBox.textContent = 'Konfigurasi Supabase belum diisi.'; return; }
+
+  if (!isConfigured) {
+    errorBox.textContent = 'Konfigurasi Supabase belum diisi.';
+    return;
+  }
   if (!/^[a-z0-9][a-z0-9._-]{2,31}$/.test(user)) {
-    errorBox.textContent = 'Username 3–32 karakter. Gunakan huruf kecil, angka, titik, _ atau -.';
+    errorBox.textContent = 'Username 3–32 karakter (huruf kecil, angka, titik, _ atau -).';
     return;
   }
   if (!/^\d{4,12}$/.test(pin)) {
-    errorBox.textContent = 'PIN harus terdiri dari 4–12 angka.';
+    errorBox.textContent = 'PIN harus 4–12 angka.';
     return;
   }
 
@@ -956,7 +1073,7 @@ $('#login-form').addEventListener('submit', async event => {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'apikey': SUPABASE_PUBLISHABLE_KEY
+        apikey: SUPABASE_PUBLISHABLE_KEY
       },
       body: JSON.stringify({ username: user, pin })
     });
@@ -973,36 +1090,40 @@ $('#login-form').addEventListener('submit', async event => {
     await openAdmin(data.session);
     $('#login-pin').value = '';
   } catch (error) {
-    console.error('Username/PIN login failed:', error);
-    errorBox.textContent = error.message || 'Login gagal. Periksa username dan PIN.';
+    errorBox.textContent = error.message || 'Login gagal.';
     button.disabled = false;
-    button.textContent = 'Masuk ↗';
+    button.textContent = 'Masuk';
   }
 });
 
-$('#admin-nav').addEventListener('click', event => {
-  const button = event.target.closest('[data-view]');
-  if (button) loadView(button.dataset.view);
-});
 $('#logout-btn').addEventListener('click', async () => {
   await supabase?.auth.signOut();
   shell.classList.add('hidden');
   loginView.classList.remove('hidden');
   $('#login-pin').value = '';
+  currentAccessToken = '';
   const loginButton = $('#login-form button[type="submit"]');
-  if (loginButton) { loginButton.disabled = false; loginButton.textContent = 'Masuk ↗'; }
-  currentUserId = null;
+  if (loginButton) {
+    loginButton.disabled = false;
+    loginButton.textContent = 'Masuk';
+  }
 });
 
 async function init() {
   if (!isConfigured) {
-    $('#login-error').textContent = 'Isi Project URL dan Publishable key di assets/js/config.js.';
+    $('#login-error').textContent = 'Konfigurasi Supabase belum diisi.';
     return;
   }
-  const { data: { session } } = await supabase.auth.getSession();
+  const {
+    data: { session }
+  } = await supabase.auth.getSession();
   if (session) {
-    try { await openAdmin(session); }
-    catch (error) { $('#login-error').textContent = error.message; }
+    try {
+      await openAdmin(session);
+    } catch (error) {
+      $('#login-error').textContent = error.message;
+    }
   }
 }
+
 init();

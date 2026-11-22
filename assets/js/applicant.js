@@ -1,8 +1,9 @@
-import { supabase, isConfigured } from './supabase.js?v=20261116-manual-default-07';
-import { MAX_CV_BYTES, CV_BUCKET, CV_PATH_PREFIX } from './config.js?v=20261116-manual-default-07';
-import { $, esc, ageFrom, cacheCandidateNik, setBusy } from './common.js?v=20261119-stage2-table-tools-01';
-import { extractKtpText, formatKtpAddress } from './ktp-ocr.js?v=20261116-manual-default-07';
-import { recognizeWithPaddle } from './ocr-engine.js?v=20261116-manual-default-07';
+import { supabase, isConfigured } from './supabase.js?v=20261122-lowongan-v1';
+import { MAX_CV_BYTES, CV_BUCKET, CV_PATH_PREFIX } from './config.js?v=20261122-lowongan-v1';
+import { $, esc, ageFrom, cacheCandidateNik, setBusy } from './common.js?v=20261122-lowongan-v1';
+import { extractKtpText, formatKtpAddress } from './ktp-ocr.js?v=20261122-lowongan-v1';
+import { recognizeWithPaddle } from './ocr-engine.js?v=20261122-lowongan-v1';
+import { FORM_INFO_SOURCES } from './vacancy-logic.js?v=20261122-lowongan-v1';
 
 const root = $('#candidate-app');
 const queryAll = (selector, scope=document) => [...scope.querySelectorAll(selector)];
@@ -23,6 +24,7 @@ const personalFields = [
 ];
 const applicationFields = [
   {name:'posisi',label:'Posisi yang dilamar',type:'select',options:choices(availablePositions),required:true},
+  {name:'sumber_informasi',label:'Sumber Informasi',type:'select',options:choices(FORM_INFO_SOURCES),required:true},
   {name:'telepon',label:'No. telepon / WhatsApp',type:'tel',required:true},
   {name:'email',label:'Email',type:'email'},
   {name:'tinggi',label:'Tinggi badan (cm)',type:'number',min:80,max:240},
@@ -354,10 +356,10 @@ function renderForm(values={}){
   const step1=`<div class="form-step" data-form-step="1">${renderFamily(values)}${renderEducation(values)}</div>`;
   const step2=`<div class="form-step" data-form-step="2">${renderLanguages(values)}${sectionHtml('E','HOBI',basicGrid([{name:'hobby',label:'Hobi dan minat',type:'textarea',wide:true}],values))}${renderWork(values)}</div>`;
   const step3=`<div class="form-step" data-form-step="3">${sectionHtml('G','EKSPEKTASI',basicGrid([{name:'mulai_kerja',label:'Tanggal mulai bisa bekerja',type:'date'},{name:'gaji_harapan',label:'Gaji yang diharapkan (Rp)',currency:true},{name:'fasilitas_harapan',label:'Fasilitas lain yang diharapkan',wide:true}],values))}${renderReferences(values)}${sectionHtml('I','PERTANYAAN TERBUKA',basicGrid([{name:'jawaban1',label:'Apa yang Anda ketahui tentang perusahaan kami?',type:'textarea',wide:true},{name:'jawaban2',label:'Ceritakan tentang pribadi Anda.',type:'textarea',wide:true},{name:'jawaban3',label:'Apa yang akan Anda lakukan untuk perusahaan kami jika diterima?',type:'textarea',wide:true}],values))}</div>`;
-  const step4=`<div class="form-step" data-form-step="4">${sectionHtml('J','PERNYATAAN',`<label class="consent-wrap"><input type="checkbox" id="setuju" name="setuju" value="true" ${values.setuju?'checked':''} required><span>Dengan ini saya menyatakan semua data yang saya isi benar.</span></label>`)}<section class="form-section"><h2><span class="section-bullet">KTP</span>FOTO KTP</h2><p class="field-hint">Unggah foto KTP yang jelas. Pada mode manual, foto hanya dikompres di perangkat dan tidak diproses dengan OCR.</p><label class="upload-zone"><span class="upload-icon">↥</span><b id="ktp-upload-label">Unggah foto KTP</b><small>JPG, PNG, atau WebP · Maks. 8 MB</small><input type="file" id="ktp-photo-file" accept="image/jpeg,image/png,image/webp" capture="environment"></label><div class="cv-upload-state" id="ktp-upload-state" aria-live="polite"></div><img id="ktp-photo-preview" alt="Pratinjau foto KTP" hidden style="display:none;max-width:100%;width:240px;max-height:150px;object-fit:contain;border:1px solid #dce2ea;border-radius:10px;margin-top:12px"></section><section class="form-section"><h2><span class="section-bullet">CV</span>CURRICULUM VITAE</h2><label class="upload-zone cv-upload-zone"><span class="upload-icon">↥</span><b id="cv-filename">${esc(cvFilename||'Unggah CV (PDF)')}</b><small>PDF · Maks. 10 MB</small><input type="file" id="cv-file" accept="application/pdf,.pdf"></label><div class="cv-upload-state" id="cv-upload-state"></div></section></div>`;
+  const step4=`<div class="form-step" data-form-step="4">${sectionHtml('J','PERNYATAAN',`<label class="consent-wrap"><input type="checkbox" id="setuju" name="setuju" value="true" ${values.setuju?'checked':''} required><span>Dengan ini saya menyatakan semua data yang saya isi benar.</span></label>`)}<section class="form-section"><h2><span class="section-bullet">KTP</span>FOTO KTP</h2><label class="upload-zone"><span class="upload-icon">↥</span><b id="ktp-upload-label">Unggah foto KTP</b><small>JPG, PNG, atau WebP · Maks. 8 MB</small><input type="file" id="ktp-photo-file" accept="image/jpeg,image/png,image/webp" capture="environment"></label><div class="cv-upload-state" id="ktp-upload-state" aria-live="polite"></div><img id="ktp-photo-preview" alt="Pratinjau foto KTP" hidden style="display:none;max-width:100%;width:240px;max-height:150px;object-fit:contain;border:1px solid #dce2ea;border-radius:10px;margin-top:12px"></section><section class="form-section"><h2><span class="section-bullet">CV</span>CURRICULUM VITAE</h2><label class="upload-zone cv-upload-zone"><span class="upload-icon">↥</span><b id="cv-filename">${esc(cvFilename||'Unggah CV (PDF)')}</b><small>PDF · Maks. 10 MB</small><input type="file" id="cv-file" accept="application/pdf,.pdf"></label><div class="cv-upload-state" id="cv-upload-state"></div></section></div>`;
   const reviewCount=Object.values(ocrFieldConfidence).filter(score=>score<0.84).length;
   const reviewNotice=reviewCount?`<div class="ocr-review-summary" role="status">${reviewCount} bagian hasil OCR memiliki tingkat keyakinan teks rendah. Periksa penanda di samping kolom sebelum mengirim lamaran.</div>`:'';
-  return `<div class="step-top"><span class="stage-kicker">FORMULIR LAMARAN KERJA</span><span class="step-number" id="wizard-count"></span></div><div class="wizard-progress"><span id="wizard-progress-bar"></span></div><section class="candidate-card form-wizard-card">${renderOcrMappingPanel(ocrMappingData)}${reviewNotice}<div class="wizard-heading"><div><h1 class="candidate-title">Data pelamar</h1><div class="wizard-step-label" id="wizard-step-label"></div></div><span class="wizard-save-state" id="draft-save-state" aria-live="polite">●</span></div><form id="application-form" novalidate>${step0}${step1}${step2}${step3}${step4}<div id="form-error" class="form-error" role="alert"></div><div class="wizard-actions"><button type="button" class="btn btn-secondary" id="wizard-prev">Kembali</button><button type="button" class="btn btn-primary" id="wizard-next">Lanjut</button></div></form></section>`;
+  return `<div class="step-top"><span class="stage-kicker">FORMULIR LAMARAN KERJA</span><span class="step-number" id="wizard-count"></span></div><div class="wizard-progress"><span id="wizard-progress-bar"></span></div><section class="candidate-card form-wizard-card">${renderOcrMappingPanel(ocrMappingData)}${reviewNotice}<div class="wizard-heading"><div><h1 class="candidate-title">Data pelamar</h1><div class="wizard-step-label" id="wizard-step-label"></div></div></div><form id="application-form" novalidate>${step0}${step1}${step2}${step3}${step4}<div id="form-error" class="form-error" role="alert"></div><div class="wizard-actions"><button type="button" class="btn btn-secondary" id="wizard-prev">Kembali</button><button type="button" class="btn btn-primary" id="wizard-next">Lanjut</button></div></form></section>`;
 }
 
 function buildAddress(data){
@@ -518,7 +520,7 @@ function dataUrlToBlob(dataUrl){
 }
 function updateKtpUploadUI(form){
   const status=$('#ktp-upload-state',form),preview=$('#ktp-photo-preview',form),label=$('#ktp-upload-label',form);
-  if(status)status.textContent=ktpPhotoDataUrl?'Foto KTP siap dikirim.':'Foto KTP wajib diunggah sebelum lamaran dikirim.';
+  if(status)status.textContent=ktpPhotoDataUrl?'Foto KTP siap.':'';
   if(label)label.textContent=ktpPhotoDataUrl?'Ganti foto KTP':'Unggah foto KTP';
   if(preview){
     preview.hidden=!ktpPhotoDataUrl;
@@ -533,7 +535,7 @@ async function uploadManualKtp(file,form){
   const accepted=/^image\/(jpeg|png|webp)$/i.test(file.type)||/\.(jpe?g|png|webp)$/i.test(file.name||'');
   if(!accepted){if(status)status.textContent='Format foto tidak didukung. Gunakan JPG, PNG, atau WebP.';return;}
   if(file.size>8*1024*1024){if(status)status.textContent='Ukuran foto KTP maksimal 8 MB.';return;}
-  if(status)status.textContent='Menyiapkan foto KTP di perangkat…';
+  if(status)status.textContent='Menyiapkan foto KTP…';
   let objectUrl='';
   try{
     objectUrl=URL.createObjectURL(file);
@@ -549,7 +551,7 @@ async function uploadManualKtp(file,form){
     initialData={...initialData,ktp_foto:ktpPhotoDataUrl};
     updateKtpUploadUI(form);
     queueDraftSave(form);
-    if(status)status.textContent='Foto KTP siap. Gambar dikompres di perangkat; OCR tidak dijalankan.';
+    if(status)status.textContent='Foto KTP siap.';
   }catch(error){
     if(status)status.textContent=error.message||'Foto KTP gagal diproses.';
   }finally{
@@ -1003,7 +1005,7 @@ async function uploadCv(file){
     cvPath=path;
     cvFilename=file.name;
     name.textContent=cvFilename;
-    status.textContent='CV tersimpan. Formulir dapat dikirim setelah seluruh data lengkap.';
+    status.textContent='CV tersimpan.';
     writeLocalDraft($('#application-form'));
   }catch(error){
     cvPath='';
@@ -1109,15 +1111,27 @@ async function init(){
     root.innerHTML='<section class="candidate-card"><h1 class="candidate-title">Portal Karir</h1><p class="candidate-sub">Server belum terhubung.</p></section>';return;
   }
   await loadApplicationPositions();
+  const params=new URLSearchParams(location.search);
+  const paramPos=(params.get('posisi')||'').trim();
+  const paramSrc=(params.get('sumber')||'').trim();
+  const matchedPos=paramPos?availablePositions.find(p=>p.toLocaleLowerCase('id')===paramPos.toLocaleLowerCase('id')):'';
+  const matchedSrc=paramSrc?FORM_INFO_SOURCES.find(s=>s.toLocaleLowerCase('id')===paramSrc.toLocaleLowerCase('id')):'';
+
   const localDraft=readLocalDraft();
   if(localDraft){
-    initialData=localDraft;
+    initialData={
+      ...localDraft,
+      ...(matchedPos&&!localDraft.posisi?{posisi:matchedPos}:{}),
+      ...(matchedSrc&&!localDraft.sumber_informasi?{sumber_informasi:matchedSrc}:{})
+    };
     cvFilename=localDraft.__cv_filename||'';
     cvPath=localDraft.__cv_path||'';
     ktpPhotoDataUrl=localDraft.ktp_foto||'';
     showForm();
     return;
   }
+  if(matchedPos)initialData.posisi=matchedPos;
+  if(matchedSrc)initialData.sumber_informasi=matchedSrc;
   let ocrEnabled=false;
   try{
     const {data:flag}=await supabase.from('portal_settings').select('value').eq('key','ktp_ocr_enabled').maybeSingle();

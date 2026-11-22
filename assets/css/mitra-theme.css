@@ -44,10 +44,6 @@ button{transition:background .18s ease,color .18s ease,border-color .18s ease,bo
 .brand-symbol{display:none!important}
 
 /* Login dan dashboard admin */
-#desktop-guard{background:var(--teal,#016172)!important;color:#fff}
-#desktop-guard .guard-mark{width:200px!important;height:auto!important;padding:18px 20px;background:transparent!important;border-radius:0!important}
-#desktop-guard .guard-mark img{display:block;width:100%;height:auto;mix-blend-mode:screen}
-#desktop-guard .guard-title{font-size:13px!important;letter-spacing:1.4px!important}
 .login-screen{background:var(--cream,#fbf9ea)}
 .login-art{background:
   radial-gradient(circle at 15% 20%,rgba(255,255,255,.16),transparent 34%),
@@ -270,3 +266,146 @@ body.candidate-page{background:var(--cream);color:var(--text)}
  .candidate-edit-divider{align-items:flex-start;flex-direction:column;gap:3px}
  .candidate-edit-card{padding:18px}
 }
+
+/* Pengelola Lowongan · single-focus admin shell (desktop & mobile) */
+.vacancy-shell{display:block;min-height:100vh;background:var(--canvas)}
+.vacancy-topbar{position:sticky;top:0;z-index:30;height:auto;min-height:70px;padding:12px clamp(16px,3vw,32px);display:flex;align-items:center;justify-content:space-between;gap:14px;background:#fff;border-bottom:1px solid var(--line);box-shadow:0 3px 14px rgba(1,97,114,.04)}
+.topbar-brand{display:flex;align-items:center;gap:14px;min-width:0}
+.topbar-logo-wrap{display:flex;align-items:center;padding:8px 12px;border-radius:10px;background:linear-gradient(135deg,#016172,#014b59);flex:0 0 auto}
+.topbar-logo-wrap .brand-logo{width:96px;max-height:28px}
+.vacancy-topbar .topbar-title{margin:2px 0 0;font-size:18px;font-weight:800;line-height:1.2;color:var(--teal);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.vacancy-topbar .topbar-right{display:flex;align-items:center;gap:12px;flex:0 0 auto}
+.vacancy-topbar .profile-chip{padding-left:0;border-left:0}
+.logout-top-btn{min-height:40px;padding:9px 14px;font-size:12px;border-radius:9px}
+.vacancy-content{max-width:1420px;margin:0 auto;padding:22px clamp(14px,3vw,32px) 56px;background:transparent}
+
+.vacancy-toolbar{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:16px}
+.vacancy-toolbar-meta{display:flex;align-items:baseline;gap:12px;flex-wrap:wrap}
+.vacancy-toolbar-meta h2{margin:0;font-size:20px;font-weight:800;color:var(--teal-dark);letter-spacing:-.3px}
+.vacancy-count{font-size:12px;color:var(--muted);font-variant-numeric:tabular-nums}
+.vacancy-toolbar-actions{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.vacancy-search{min-width:220px;padding:10px 12px;border:1px solid var(--border);border-radius:9px;background:#fff;color:var(--ink);font-size:13px;outline:none}
+.vacancy-search:focus{border-color:var(--teal);box-shadow:0 0 0 3px rgba(1,97,114,.10)}
+.vacancy-toolbar-actions .btn{min-height:42px;padding:10px 15px;font-size:13px;border-radius:9px}
+
+.vacancy-table-panel{background:#fff;border:1px solid var(--line);border-radius:14px;box-shadow:var(--shadow);overflow:hidden}
+.vacancy-table-wrap{overflow-x:auto;max-height:none}
+.vacancy-table{width:100%;border-collapse:collapse;table-layout:fixed}
+.vacancy-table thead th{position:static;cursor:default;padding:12px 14px;font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.45px;color:#526b70;background:#f4f8f6;border-bottom:1px solid var(--line);white-space:nowrap}
+.vacancy-table thead th::after{display:none}
+.vacancy-table tbody td{padding:14px;vertical-align:top;border-bottom:1px solid #edf2ef;font-size:13px;line-height:1.45;color:var(--ink);white-space:normal;overflow-wrap:anywhere}
+.vacancy-table tbody tr:last-child td{border-bottom:0}
+.vacancy-table tbody tr:hover{background:#fbfdfb}
+.vacancy-table .col-pos{width:18%}
+.vacancy-table .col-loc{width:22%}
+.vacancy-table .col-score{width:8%;text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+.vacancy-table .col-other{width:16%}
+.vacancy-table .col-questions{width:27%}
+.vacancy-table .col-actions{width:176px;text-align:right}
+.vacancy-table td.col-score{font-weight:800;color:var(--teal-dark)}
+
+.pos-name-title{font-weight:800;font-size:14px;color:var(--teal-dark)}
+.pos-state-line{margin-top:4px;font-size:11px;color:#21835a;font-weight:700}
+.pos-state-line.inactive{color:var(--muted)}
+.loc-district-list{font-size:12px;color:#3f5358;line-height:1.5}
+.loc-empty{font-size:12px;color:var(--muted)}
+.q-summary-list{display:flex;flex-direction:column;gap:8px;margin:0;padding:0;list-style:none}
+.q-summary-item{padding-bottom:7px;border-bottom:1px dashed #e6ede9}
+.q-summary-item:last-child{padding-bottom:0;border-bottom:0}
+.q-summary-head{display:flex;align-items:baseline;justify-content:space-between;gap:8px;font-size:12px}
+.q-summary-head b{color:var(--ink);font-weight:700}
+.q-summary-type{font-size:11px;color:var(--muted);white-space:nowrap}
+.q-summary-scores{margin-top:3px;font-size:11px;color:#51686d;font-variant-numeric:tabular-nums}
+.vacancy-row-actions{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+.vacancy-row-actions .icon-btn{min-height:34px;padding:6px 10px;font-size:12px;font-weight:700;background:#fff;text-align:center}
+.vacancy-row-actions .icon-btn.primary-action{background:#edf5f2;border-color:#bfd6ce;color:var(--teal-dark)}
+.vacancy-row-actions .icon-btn.danger-action{color:var(--danger);border-color:#efd3cf}
+.vacancy-row-actions .icon-btn.danger-action:hover{background:#fff1ef}
+
+.vacancy-cards-mobile{display:none;gap:12px;flex-direction:column}
+.vacancy-card-m{background:#fff;border:1px solid var(--line);border-radius:14px;padding:15px;box-shadow:var(--shadow)}
+.vacancy-card-m-head{display:flex;justify-content:space-between;align-items:flex-start;gap:10px;padding-bottom:10px;border-bottom:1px solid #edf2ef}
+.vacancy-card-m-grid{display:grid;grid-template-columns:1fr auto;gap:8px 12px;padding:12px 0;border-bottom:1px solid #edf2ef;font-size:12px}
+.vacancy-card-m-label{font-size:11px;font-weight:800;color:var(--muted);text-transform:uppercase;letter-spacing:.35px}
+.vacancy-card-m-score{font-weight:800;color:var(--teal-dark);font-variant-numeric:tabular-nums;text-align:right;white-space:nowrap}
+.vacancy-card-m-qs{padding:12px 0}
+.vacancy-card-m-actions{display:grid;grid-template-columns:1fr 1fr;gap:8px;padding-top:4px}
+.vacancy-card-m-actions .icon-btn{min-height:44px;font-size:13px;font-weight:700}
+
+/* Modal Editor & Share */
+.vacancy-modal-card{width:min(860px,100%);max-height:min(92vh,920px);padding:22px;display:flex;flex-direction:column;overflow:hidden}
+.share-modal-card{width:min(580px,100%)}
+.vacancy-modal-form{display:flex;flex-direction:column;min-height:0;flex:1}
+.vacancy-modal-body{overflow-y:auto;padding-right:4px;margin-top:14px;display:flex;flex-direction:column;gap:18px;flex:1;min-height:0}
+.vacancy-modal-footer{flex-shrink:0;padding-top:12px;margin-top:12px;border-top:1px solid var(--line);background:#fff}
+.vacancy-modal-footer .form-error{margin-top:0;margin-bottom:8px;min-height:0}
+.vacancy-modal-footer .employee-modal-actions{margin-top:0}
+.v-form-section{border:1px solid var(--line);border-radius:12px;padding:16px;background:#fcfdfb}
+.v-form-section-head{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:12px;flex-wrap:wrap}
+.v-form-section-head h3{margin:0;font-size:14px;font-weight:800;color:var(--teal-dark)}
+.v-grid-2{display:grid;grid-template-columns:minmax(0,1fr) 140px;gap:12px;align-items:end}
+.v-grid-eq{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.v-field{display:flex;flex-direction:column;gap:6px;min-width:0}
+.v-field label{font-size:12px;font-weight:700;color:#39555d}
+.v-field .input,.v-field .select,.v-field .textarea{min-height:42px;padding:9px 11px;font-size:13px;background:#fff}
+.v-check-inline{display:flex;align-items:center;gap:9px;min-height:42px;font-size:13px;font-weight:700;color:var(--ink);cursor:pointer}
+.v-check-inline input{width:18px;height:18px;accent-color:var(--teal);flex:0 0 auto}
+
+/* District multi-select picker */
+.district-picker-controls{display:grid;grid-template-columns:170px minmax(0,1fr) auto;gap:8px;margin-bottom:10px}
+.district-picker-list{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:6px;max-height:190px;overflow-y:auto;padding:10px;border:1px solid var(--line);border-radius:10px;background:#fff}
+.district-chip{display:flex;align-items:center;gap:7px;padding:6px 8px;border:1px solid #e6ece9;border-radius:8px;font-size:12px;cursor:pointer;background:#fff}
+.district-chip:has(input:checked){border-color:var(--teal);background:#edf5f2;color:var(--teal-dark);font-weight:700}
+.district-chip input{width:15px;height:15px;accent-color:var(--teal);flex:0 0 auto}
+.district-custom-row{display:flex;gap:8px;margin-top:10px}
+.district-selected-tags{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
+.district-selected-tag{display:inline-flex;align-items:center;gap:6px;padding:4px 9px;border:1px solid #c5dbd3;border-radius:7px;background:#edf5f2;color:var(--teal-dark);font-size:12px;font-weight:700}
+.district-selected-tag button{border:0;background:transparent;color:var(--teal-dark);font-weight:800;padding:0 2px;font-size:14px;line-height:1}
+
+/* Flexible Question Builder */
+.q-builder-list{display:flex;flex-direction:column;gap:12px}
+.q-builder-item{border:1px solid var(--line);border-radius:11px;padding:14px;background:#fff}
+.q-builder-top{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:10px;flex-wrap:wrap}
+.q-builder-index{font-size:12px;font-weight:800;color:var(--teal-dark)}
+.q-builder-controls{display:flex;gap:6px;align-items:center}
+.q-builder-fields{display:grid;grid-template-columns:minmax(0,1.6fr) minmax(150px,1fr) auto;gap:10px;align-items:end}
+.q-options-box{margin-top:12px;padding-top:10px;border-top:1px solid #edf2ef}
+.q-options-head{display:grid;grid-template-columns:minmax(0,1fr) 110px 36px;gap:8px;font-size:11px;font-weight:800;color:var(--muted);margin-bottom:6px;text-transform:uppercase}
+.q-option-row{display:grid;grid-template-columns:minmax(0,1fr) 110px 36px;gap:8px;margin-bottom:7px;align-items:center}
+.q-option-row .input{min-height:38px;padding:7px 10px;font-size:13px}
+.q-option-row input[type="number"],.v-field input[type="number"]{font-variant-numeric:tabular-nums}
+.q-option-del{min-height:38px;width:36px;border:1px solid #efd3cf;border-radius:8px;background:#fff;color:var(--danger);font-weight:800}
+.q-nonoption-box{margin-top:12px;padding-top:10px;border-top:1px solid #edf2ef;display:grid;grid-template-columns:minmax(0,1fr) 150px;gap:10px}
+
+.share-preview-box{padding:12px;border:1px solid var(--line);border-radius:10px;background:#f7faf8;font-size:12px;word-break:break-all;color:var(--teal-dark);font-family:monospace}
+.share-actions-row{display:flex;gap:10px;flex-wrap:wrap;margin-top:10px}
+.share-actions-row .btn,.share-actions-row a.btn{min-height:44px;display:inline-flex;align-items:center;justify-content:center;text-decoration:none;font-size:13px}
+
+@media(max-width:960px){
+ .vacancy-table-panel{display:none}
+ .vacancy-cards-mobile{display:flex}
+}
+@media(max-width:720px){
+ .login-panel{padding:24px 16px}
+ .login-box .brand-lockup{margin-bottom:26px}
+ .vacancy-topbar{padding:10px 14px;flex-wrap:wrap}
+ .topbar-logo-wrap{padding:6px 9px}
+ .topbar-logo-wrap .brand-logo{width:76px;max-height:22px}
+ .vacancy-topbar .topbar-title{font-size:16px}
+ .vacancy-topbar .profile-chip{display:none}
+ .logout-top-btn{min-height:44px;padding:8px 12px}
+ .vacancy-content{padding:16px 12px 42px}
+ .vacancy-toolbar{flex-direction:column;align-items:stretch}
+ .vacancy-toolbar-actions{flex-direction:column;align-items:stretch}
+ .vacancy-search{width:100%;min-height:44px;font-size:16px}
+ .vacancy-toolbar-actions .btn{min-height:44px;width:100%}
+ .modal-backdrop{padding:8px;align-items:end}
+ .vacancy-modal-card{padding:16px;border-radius:16px 16px 12px 12px;max-height:94vh}
+ .v-grid-2,.v-grid-eq,.district-picker-controls,.q-builder-fields,.q-nonoption-box{grid-template-columns:1fr}
+ .q-options-head,.q-option-row{grid-template-columns:minmax(0,1fr) 82px 40px;gap:6px}
+ .v-field .input,.v-field .select,.v-field .textarea{font-size:16px;min-height:44px}
+ .q-option-row .input{font-size:16px;min-height:44px}
+ .q-option-del{min-height:44px;width:40px}
+ .share-actions-row>*{flex:1}
+}
+
