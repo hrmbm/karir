@@ -1,5 +1,5 @@
 <!doctype html><html lang="id"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-  <meta name="pk-build" content="20261122-lowongan-v1"><meta name="theme-color" content="#016172"><title>Lamaran Kerja · Mitra Binamandiri Makmur</title><link rel="stylesheet" href="../assets/css/app.css?v=20261122-lowongan-v1"><style>
+  <meta name="pk-build" content="20261122-lowongan-v5"><meta name="theme-color" content="#016172"><title>Lamaran Kerja · Mitra Binamandiri Makmur</title><link rel="stylesheet" href="../assets/css/app.css?v=20261122-lowongan-v5"><style>
     :root{--ink:#172033;--muted:#687386;--line:#e6eaf0;--brand:#174a75;--brand2:#236b9b;--bg:#f4f7fb;--white:#fff;--good:#137a55;--bad:#a34b36}
     *{box-sizing:border-box}
     body{margin:0;background:var(--bg);color:var(--ink);font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif}
@@ -45,7 +45,7 @@
     .hidden{display:none!important}
     @media(min-width:500px){.wrap{padding-top:30px}.top{padding:27px 24px}}
     .apply-shell{min-height:100vh;padding:22px 12px;background:#f3f5f8}.apply-shell .wrap{max-width:680px;margin:0 auto}.apply-shell .top{background:linear-gradient(135deg,#17243a,#294568)}.apply-shell .primary{background:#3b68d8}.apply-shell .foot{color:#96a2b2}@media(min-width:900px){.apply-shell .wrap{max-width:760px}.apply-shell .top{padding:30px}}
-  </style><link rel="stylesheet" href="../assets/css/mitra-theme.css?v=20261122-lowongan-v1"></head><body><div class="apply-shell">
+  </style><link rel="stylesheet" href="../assets/css/mitra-theme.css?v=20261122-lowongan-v5"></head><body><div class="apply-shell">
   <div class="wrap">
     <header class="top">
       <div class="apply-brand"><img class="brand-logo" src="../assets/img/logo-mitra.png" alt="PT. Mitra Binamandiri Makmur"><span>PORTAL REKRUTMEN<small>PT. MITRA BINAMANDIRI MAKMUR</small></span></div>
@@ -60,33 +60,7 @@
         <form id="applicationForm">
           <section class="step" data-title="Data kandidat">
             <h2 class="section-title">Data kandidat</h2>
-            <div class="field">
-              <label for="position">Posisi yang dilamar</label>
-              <select id="position" required>
-                <option value="">Pilih posisi</option>
-              </select>
-            </div>
-            <div class="field">
-              <label for="infoSource">Sumber Informasi</label>
-              <select id="infoSource" required>
-                <option value="">Pilih sumber informasi</option>
-              </select>
-            </div>
-            <div class="field"><label for="name">Nama lengkap</label><input id="name" type="text" maxlength="100" placeholder="Nama sesuai identitas" required></div>
-            <div class="field">
-              <label for="city">Kabupaten / Kota</label>
-              <select id="city" required>
-                <option value="">Pilih wilayah</option>
-                <option>Pasuruan</option><option>Sidoarjo</option><option>Mojokerto</option><option>Malang</option><option>Area lain</option>
-              </select>
-            </div>
-            <div class="field" id="districtSelectWrap">
-              <label for="district">Kecamatan</label><select id="district"><option value="">Pilih kecamatan</option></select>
-            </div>
-            <div class="field hidden" id="districtOtherWrap">
-              <label for="districtOther">Kecamatan / wilayah tempat tinggal</label><input id="districtOther" type="text" placeholder="Tulis kecamatan / wilayah">
-            </div>
-            <div class="field"><label for="whatsapp">Nomor WhatsApp aktif</label><input id="whatsapp" type="tel" maxlength="20" placeholder="Contoh: 081234567890" required></div>
+            <div id="step1Fields"></div>
           </section>
 
           <section class="step hidden" data-title="Pengalaman kerja">
@@ -132,18 +106,35 @@
     <p class="foot">Mitra Binamandiri Makmur</p>
   </div>
 </div><script type="module">
+  if ('caches' in window) {
+    try {
+      const names = await caches.keys();
+      await Promise.all(names
+        .filter(n => n.startsWith('portal-karir-app-') && n !== 'portal-karir-app-assets-20261122-lowongan-v5')
+        .map(n => caches.delete(n)));
+    } catch {}
+  }
+  if ('serviceWorker' in navigator && location.protocol === 'https:') {
+    navigator.serviceWorker.getRegistrations().then(regs => regs.forEach(r => r.update().catch(() => {}))).catch(() => {});
+  }
+
   import {
     DISTRICTS_BY_CITY,
     APPLY_INFO_SOURCES,
     DEFAULT_VACANCIES,
-    mergeVacanciesWithPositions,
+    normalizeVacancyList,
     calculateCandidateScore
-  } from '../assets/js/vacancy-logic.js?v=20261122-lowongan-v1';
+  } from '../assets/js/vacancy-logic.js?v=20261122-lowongan-v5';
+  import {
+    DEFAULT_APPLY_SCHEMA,
+    normalizeApplySchema
+  } from '../assets/js/form-schema.js?v=20261122-lowongan-v5';
 
   const form = document.getElementById('applicationForm');
   const steps = [...document.querySelectorAll('.step')];
   let current = 0;
   let activeVacancies = [];
+  let applySchema = normalizeApplySchema(DEFAULT_APPLY_SCHEMA);
   const $ = id => document.getElementById(id);
   const HR_WHATSAPP_NUMBER = '628133193313';
 
@@ -160,6 +151,9 @@
 
   function buildStage1WhatsAppUrl(payload, vacancy, scoring, fileName, cvUrl, reference) {
     const labelMap = new Map((vacancy?.questions || []).map(q => [q.id, q.label]));
+    for (const f of applySchema.fields || []) {
+      if (!f.system) labelMap.set(f.id, f.label);
+    }
     const detailLines = Object.entries(payload.details || {})
       .filter(([, value]) => Array.isArray(value) ? value.length > 0 : String(value ?? '').trim() !== '')
       .map(([key, value]) => `• ${labelMap.get(key) || key}: ${formatWhatsAppValue(value)}`);
@@ -169,11 +163,11 @@
       '',
       `Nama kandidat: ${payload.name}`,
       `Posisi dilamar: ${payload.position}`,
-      `Sumber Informasi: ${payload.source}`,
+      ...(payload.source ? [`Sumber Informasi: ${payload.source}`] : []),
       `Kabupaten/Kota: ${payload.city}`,
       `Kecamatan: ${payload.district || '—'}`,
       `WhatsApp kandidat: ${payload.whatsapp}`,
-      `Skor awal: ${scoring.totalScore} / ${scoring.maxScore}`,
+      `Skor awal: ${scoring.percentageScore} / 100 (${scoring.totalScore} / ${scoring.maxScore})`,
       '',
       'PENGALAMAN KERJA',
       ...(detailLines.length ? detailLines : ['• —']),
@@ -185,101 +179,209 @@
     return `https://wa.me/${HR_WHATSAPP_NUMBER}?text=${encodeURIComponent(message.join('\n'))}`;
   }
 
-  async function loadVacanciesAndSources() {
-    let apiVacancies = DEFAULT_VACANCIES;
-    let configuredPositions = [];
+  function renderStep1Field(field, idx) {
+    const isReq = field.required !== false;
+    const reqAttr = isReq ? 'required' : '';
+    const reqMark = isReq ? '<span class="req-mark" aria-hidden="true">*</span>' : '';
+    if (field.type === 'system_position') {
+      return `<div class="field">
+        <label for="position">${escapeHtml(field.label)}<span class="req-mark" aria-hidden="true">*</span></label>
+        <select id="position" required>
+          <option value="">${escapeHtml(field.placeholder || 'Pilih posisi')}</option>
+          ${activeVacancies.map(v => `<option value="${escapeHtml(v.name)}">${escapeHtml(v.name)}</option>`).join('')}
+        </select>
+      </div>`;
+    }
+    if (field.type === 'system_source') {
+      const opts = field.options?.length ? field.options : APPLY_INFO_SOURCES;
+      return `<div class="field">
+        <label for="infoSource">${escapeHtml(field.label)}${reqMark}</label>
+        <select id="infoSource" ${reqAttr}>
+          <option value="">${escapeHtml(field.placeholder || 'Pilih sumber informasi')}</option>
+          ${opts.map(src => `<option value="${escapeHtml(src)}">${escapeHtml(src)}</option>`).join('')}
+        </select>
+      </div>`;
+    }
+    if (field.id === 'name') {
+      return `<div class="field">
+        <label for="name">${escapeHtml(field.label)}<span class="req-mark" aria-hidden="true">*</span></label>
+        <input id="name" type="text" minlength="2" maxlength="100" placeholder="${escapeHtml(field.placeholder || 'Nama sesuai identitas')}" required>
+      </div>`;
+    }
+    if (field.type === 'system_location') {
+      return `
+        <div class="field">
+          <label for="city">Kabupaten / Kota${reqMark}</label>
+          <select id="city" data-loc-required="${isReq ? 'true' : 'false'}" ${reqAttr}>
+            <option value="">${escapeHtml(field.placeholder || 'Pilih wilayah')}</option>
+            <option>Pasuruan</option><option>Sidoarjo</option><option>Mojokerto</option><option>Malang</option><option>Area lain</option>
+          </select>
+        </div>
+        <div class="field" id="districtSelectWrap">
+          <label for="district">Kecamatan${reqMark}</label><select id="district" ${reqAttr}><option value="">Pilih kecamatan</option></select>
+        </div>
+        <div class="field hidden" id="districtOtherWrap">
+          <label for="districtOther">Kecamatan / wilayah tempat tinggal${reqMark}</label><input id="districtOther" type="text" placeholder="Tulis kecamatan / wilayah">
+        </div>`;
+    }
+    if (field.id === 'whatsapp') {
+      return `<div class="field">
+        <label for="whatsapp">${escapeHtml(field.label)}${reqMark}</label>
+        <input id="whatsapp" type="tel" maxlength="20" placeholder="${escapeHtml(field.placeholder || 'Contoh: 081234567890')}" ${reqAttr}>
+      </div>`;
+    }
 
-    const [apiData, settingsData] = await Promise.all([
-      fetch('/api/vacancies', { cache: 'no-store' })
-        .then(res => (res.ok ? res.json() : null))
-        .catch(() => null),
+    const inputId = `s1_custom_${idx}`;
+    const customAttrs = `data-s1-id="${escapeHtml(field.id)}" data-s1-type="${escapeHtml(field.type)}"`;
+
+    if (field.type === 'dropdown') {
+      const opts = (field.options || [])
+        .map(opt => `<option value="${escapeHtml(opt)}">${escapeHtml(opt)}</option>`)
+        .join('');
+      return `<div class="field">
+        <label for="${inputId}">${escapeHtml(field.label)}${reqMark}</label>
+        <select id="${inputId}" ${customAttrs} ${reqAttr}>
+          <option value="">${escapeHtml(field.placeholder || 'Pilih')}</option>
+          ${opts}
+        </select>
+      </div>`;
+    }
+    if (field.type === 'radio') {
+      const opts = (field.options || [])
+        .map(opt => `<label class="opt">
+          <input type="radio" name="${inputId}" value="${escapeHtml(opt)}" data-s1-id="${escapeHtml(field.id)}">
+          <span>${escapeHtml(opt)}</span>
+        </label>`)
+        .join('');
+      return `<div class="field" data-q-radio-group="${escapeHtml(field.id)}" data-q-required="${isReq ? 'true' : 'false'}" data-q-label="${escapeHtml(field.label)}">
+        <div class="legend">${escapeHtml(field.label)}${reqMark}</div>
+        <div class="options">${opts}</div>
+      </div>`;
+    }
+    if (field.type === 'checkbox') {
+      const opts = (field.options || [])
+        .map(opt => `<label class="opt">
+          <input type="checkbox" name="${inputId}" value="${escapeHtml(opt)}" data-s1-id="${escapeHtml(field.id)}">
+          <span>${escapeHtml(opt)}</span>
+        </label>`)
+        .join('');
+      return `<div class="field" data-q-checkbox-group="${escapeHtml(field.id)}" data-q-required="${isReq ? 'true' : 'false'}" data-q-label="${escapeHtml(field.label)}">
+        <div class="legend">${escapeHtml(field.label)}${reqMark}</div>
+        <div class="options">${opts}</div>
+      </div>`;
+    }
+    if (field.type === 'textarea') {
+      return `<div class="field">
+        <label for="${inputId}">${escapeHtml(field.label)}${reqMark}</label>
+        <textarea id="${inputId}" ${customAttrs} maxlength="1200" placeholder="${escapeHtml(field.placeholder || '')}" ${reqAttr}></textarea>
+      </div>`;
+    }
+    if (field.type === 'number') {
+      return `<div class="field">
+        <label for="${inputId}">${escapeHtml(field.label)}${reqMark}</label>
+        <input id="${inputId}" type="number" step="any" ${customAttrs} placeholder="${escapeHtml(field.placeholder || '')}" ${reqAttr}>
+      </div>`;
+    }
+    return `<div class="field">
+      <label for="${inputId}">${escapeHtml(field.label)}${reqMark}</label>
+      <input id="${inputId}" type="text" ${customAttrs} maxlength="180" placeholder="${escapeHtml(field.placeholder || '')}" ${reqAttr}>
+    </div>`;
+  }
+
+  function renderStep1Fields() {
+    const visibleFields = applySchema.fields.filter(f => f.enabled !== false);
+    $('step1Fields').innerHTML = visibleFields.map((f, idx) => renderStep1Field(f, idx)).join('');
+
+    $('city')?.addEventListener('change', () => {
+      const cityEl = $('city');
+      const city = cityEl.value;
+      const locRequired = cityEl.dataset.locRequired === 'true';
+      $('district').innerHTML = '<option value="">Pilih kecamatan</option>';
+      if (city === 'Area lain') {
+        $('districtSelectWrap').classList.add('hidden');
+        $('districtOtherWrap').classList.remove('hidden');
+        $('districtOther').required = locRequired;
+        $('district').required = false;
+      } else {
+        $('districtSelectWrap').classList.remove('hidden');
+        $('districtOtherWrap').classList.add('hidden');
+        $('districtOther').required = false;
+        $('district').required = locRequired;
+        (DISTRICTS_BY_CITY[city] || []).forEach(name => {
+          const o = document.createElement('option');
+          o.value = name;
+          o.textContent = name;
+          $('district').appendChild(o);
+        });
+      }
+    });
+
+    $('position')?.addEventListener('change', renderDynamicFields);
+  }
+
+  async function loadVacanciesAndSchema() {
+    const [vacRes, schemaRes, sbSettings] = await Promise.all([
+      fetch('/api/vacancies', { cache: 'no-store' }).then(r => (r.ok ? r.json() : null)).catch(() => null),
+      fetch('/api/apply-schema', { cache: 'no-store' }).then(r => (r.ok ? r.json() : null)).catch(() => null),
       (async () => {
         try {
-          const { supabase } = await import('../assets/js/supabase.js?v=20261122-lowongan-v1');
+          const { supabase } = await import('../assets/js/supabase.js?v=20261122-lowongan-v5');
+          if (!supabase) return {};
           const { data, error } = await supabase
             .from('portal_settings')
-            .select('value')
-            .eq('key', 'application_positions')
-            .maybeSingle();
-          if (error) throw error;
-          return Array.isArray(data?.value) ? data.value : [];
+            .select('key,value')
+            .in('key', ['job_vacancies_config', 'apply_form_schema']);
+          if (error) return {};
+          return Object.fromEntries((data || []).map(row => [row.key, row.value]));
         } catch {
-          return [];
+          return {};
         }
       })()
     ]);
 
-    configuredPositions = [...new Set(settingsData.filter(v => typeof v === 'string' && v.trim()).map(v => v.trim()))];
-    const isCustomized = apiData?.customized === true;
-    const baseVacancies = isCustomized && Array.isArray(apiData?.vacancies) && apiData.vacancies.length
-      ? apiData.vacancies
-      : (configuredPositions.length ? [] : (Array.isArray(apiData?.vacancies) && apiData.vacancies.length ? apiData.vacancies : DEFAULT_VACANCIES));
+    const sbVac = Array.isArray(sbSettings?.job_vacancies_config) && sbSettings.job_vacancies_config.length
+      ? sbSettings.job_vacancies_config
+      : null;
+    const apiVac = Array.isArray(vacRes?.vacancies) && vacRes.vacancies.length ? vacRes.vacancies : null;
+    const rawVacancies = normalizeVacancyList(
+      (vacRes?.customized === true && apiVac)
+        ? apiVac
+        : (sbVac || apiVac || DEFAULT_VACANCIES)
+    );
+    activeVacancies = rawVacancies.filter(v => v.active !== false);
+    if (!activeVacancies.length) activeVacancies = normalizeVacancyList(DEFAULT_VACANCIES);
 
-    const merged = mergeVacanciesWithPositions(baseVacancies, configuredPositions);
-    const activeSet = new Set(configuredPositions.map(n => n.toLocaleLowerCase('id')));
-    activeVacancies = merged.filter(v => {
-      if (v.active === false) return false;
-      if (configuredPositions.length) return activeSet.has(v.name.toLocaleLowerCase('id'));
-      return true;
-    });
-    if (!activeVacancies.length) {
-      activeVacancies = DEFAULT_VACANCIES;
-    }
+    const sbApply = sbSettings?.apply_form_schema && typeof sbSettings.apply_form_schema === 'object'
+      ? sbSettings.apply_form_schema
+      : null;
+    const rawApply = (schemaRes?.customized === true && schemaRes?.schema)
+      ? schemaRes.schema
+      : (sbApply || schemaRes?.schema || DEFAULT_APPLY_SCHEMA);
+    applySchema = normalizeApplySchema(rawApply);
 
-    $('position').innerHTML =
-      '<option value="">Pilih posisi</option>' +
-      activeVacancies.map(v => `<option value="${escapeHtml(v.name)}">${escapeHtml(v.name)}</option>`).join('');
-
-    $('infoSource').innerHTML =
-      '<option value="">Pilih sumber informasi</option>' +
-      APPLY_INFO_SOURCES.map(src => `<option value="${escapeHtml(src)}">${escapeHtml(src)}</option>`).join('');
+    renderStep1Fields();
 
     const params = new URLSearchParams(location.search);
     const paramPos = (params.get('posisi') || '').trim();
     const paramSrc = (params.get('sumber') || '').trim();
 
-    if (paramPos) {
+    if (paramPos && $('position')) {
       const matchedPos = activeVacancies.find(
         v => v.name.toLocaleLowerCase('id') === paramPos.toLocaleLowerCase('id')
       );
       if (matchedPos) $('position').value = matchedPos.name;
     }
-    if (paramSrc) {
-      const matchedSrc = APPLY_INFO_SOURCES.find(
-        src => src.toLocaleLowerCase('id') === paramSrc.toLocaleLowerCase('id')
-      );
+    if (paramSrc && $('infoSource')) {
+      const srcOpts = [...$('infoSource').options].map(o => o.value).filter(Boolean);
+      const matchedSrc = srcOpts.find(src => src.toLocaleLowerCase('id') === paramSrc.toLocaleLowerCase('id'));
       if (matchedSrc) $('infoSource').value = matchedSrc;
     }
 
     renderDynamicFields();
   }
 
-  $('city').addEventListener('change', () => {
-    const city = $('city').value;
-    $('district').innerHTML = '<option value="">Pilih kecamatan</option>';
-    if (city === 'Area lain') {
-      $('districtSelectWrap').classList.add('hidden');
-      $('districtOtherWrap').classList.remove('hidden');
-      $('districtOther').required = true;
-      $('district').required = false;
-    } else {
-      $('districtSelectWrap').classList.remove('hidden');
-      $('districtOtherWrap').classList.add('hidden');
-      $('districtOther').required = false;
-      $('district').required = true;
-      (DISTRICTS_BY_CITY[city] || []).forEach(name => {
-        const o = document.createElement('option');
-        o.value = name;
-        o.textContent = name;
-        $('district').appendChild(o);
-      });
-    }
-  });
-
-  $('position').addEventListener('change', renderDynamicFields);
-
   function selectedVacancy() {
-    const name = $('position').value;
+    const name = $('position')?.value || '';
     return activeVacancies.find(v => v.name === name) || null;
   }
 
@@ -293,7 +395,9 @@
 
     host.innerHTML = vacancy.questions.map((q, idx) => {
       const fieldId = `q_input_${idx}`;
-      const reqAttr = q.required !== false ? 'required' : '';
+      const isReq = q.required !== false;
+      const reqAttr = isReq ? 'required' : '';
+      const reqMark = isReq ? '<span class="req-mark" aria-hidden="true">*</span>' : '';
       const qIdAttr = `data-q-id="${escapeHtml(q.id)}" data-q-type="${escapeHtml(q.type)}"`;
 
       if (q.type === 'dropdown') {
@@ -301,7 +405,7 @@
           .map(opt => `<option value="${escapeHtml(opt.label)}">${escapeHtml(opt.label)}</option>`)
           .join('');
         return `<div class="field">
-          <label for="${fieldId}">${escapeHtml(q.label)}</label>
+          <label for="${fieldId}">${escapeHtml(q.label)}${reqMark}</label>
           <select id="${fieldId}" ${qIdAttr} ${reqAttr}>
             <option value="">Pilih jawaban</option>
             ${opts}
@@ -312,12 +416,12 @@
       if (q.type === 'radio') {
         const opts = (q.options || [])
           .map(opt => `<label class="opt">
-            <input type="radio" name="${fieldId}" value="${escapeHtml(opt.label)}" data-q-id="${escapeHtml(q.id)}" data-q-required="${q.required !== false ? 'true' : 'false'}">
+            <input type="radio" name="${fieldId}" value="${escapeHtml(opt.label)}" data-q-id="${escapeHtml(q.id)}" data-q-required="${isReq ? 'true' : 'false'}">
             <span>${escapeHtml(opt.label)}</span>
           </label>`)
           .join('');
-        return `<div class="field" data-q-radio-group="${escapeHtml(q.id)}" data-q-required="${q.required !== false ? 'true' : 'false'}">
-          <div class="legend">${escapeHtml(q.label)}</div>
+        return `<div class="field" data-q-radio-group="${escapeHtml(q.id)}" data-q-required="${isReq ? 'true' : 'false'}" data-q-label="${escapeHtml(q.label)}">
+          <div class="legend">${escapeHtml(q.label)}${reqMark}</div>
           <div class="options">${opts}</div>
         </div>`;
       }
@@ -329,28 +433,28 @@
             <span>${escapeHtml(opt.label)}</span>
           </label>`)
           .join('');
-        return `<div class="field" data-q-checkbox-group="${escapeHtml(q.id)}" data-q-required="${q.required !== false ? 'true' : 'false'}" data-q-label="${escapeHtml(q.label)}">
-          <div class="legend">${escapeHtml(q.label)}</div>
+        return `<div class="field" data-q-checkbox-group="${escapeHtml(q.id)}" data-q-required="${isReq ? 'true' : 'false'}" data-q-label="${escapeHtml(q.label)}">
+          <div class="legend">${escapeHtml(q.label)}${reqMark}</div>
           <div class="options">${opts}</div>
         </div>`;
       }
 
       if (q.type === 'textarea') {
         return `<div class="field">
-          <label for="${fieldId}">${escapeHtml(q.label)}</label>
+          <label for="${fieldId}">${escapeHtml(q.label)}${reqMark}</label>
           <textarea id="${fieldId}" ${qIdAttr} maxlength="1200" placeholder="${escapeHtml(q.placeholder || '')}" ${reqAttr}></textarea>
         </div>`;
       }
 
       if (q.type === 'number') {
         return `<div class="field">
-          <label for="${fieldId}">${escapeHtml(q.label)}</label>
+          <label for="${fieldId}">${escapeHtml(q.label)}${reqMark}</label>
           <input id="${fieldId}" type="number" step="any" ${qIdAttr} placeholder="${escapeHtml(q.placeholder || '')}" ${reqAttr}>
         </div>`;
       }
 
       return `<div class="field">
-        <label for="${fieldId}">${escapeHtml(q.label)}</label>
+        <label for="${fieldId}">${escapeHtml(q.label)}${reqMark}</label>
         <input id="${fieldId}" type="text" ${qIdAttr} maxlength="180" placeholder="${escapeHtml(q.placeholder || '')}" ${reqAttr}>
       </div>`;
     }).join('');
@@ -371,7 +475,7 @@
     const radioGroups = [...stepEl.querySelectorAll('[data-q-radio-group]')];
     for (const group of radioGroups) {
       if (group.dataset.qRequired === 'true' && !group.querySelector('input[type="radio"]:checked')) {
-        showError('Pilih salah satu jawaban yang tersedia.');
+        showError(`Pilih salah satu jawaban untuk "${group.dataset.qLabel || 'pertanyaan'}".`);
         return false;
       }
     }
@@ -408,8 +512,9 @@
 
   $('nextBtn').addEventListener('click', () => {
     if (!currentStepValid()) return;
-    if (current === 0 && !$('position').value) { showError('Pilih posisi yang dilamar.'); return; }
-    if (current === 0 && !$('infoSource').value) { showError('Pilih sumber informasi.'); return; }
+    if (current === 0 && !$('position')?.value) { showError('Pilih posisi yang dilamar.'); return; }
+    const infoEl = $('infoSource');
+    if (current === 0 && infoEl && infoEl.required && !infoEl.value) { showError('Pilih sumber informasi.'); return; }
     showStep(current + 1);
   });
   $('backBtn').addEventListener('click', () => showStep(current - 1));
@@ -432,6 +537,21 @@
 
   function collectDetails(vacancy) {
     const details = {};
+
+    const step1Host = $('step1Fields');
+    for (const f of applySchema.fields || []) {
+      if (f.system || f.enabled === false) continue;
+      if (f.type === 'checkbox') {
+        details[f.id] = [...step1Host.querySelectorAll(`input[type="checkbox"][data-s1-id="${CSS.escape(f.id)}"]:checked`)].map(el => el.value);
+      } else if (f.type === 'radio') {
+        const checked = step1Host.querySelector(`input[type="radio"][data-s1-id="${CSS.escape(f.id)}"]:checked`);
+        details[f.id] = checked ? checked.value : '';
+      } else {
+        const el = step1Host.querySelector(`[data-s1-id="${CSS.escape(f.id)}"]`);
+        details[f.id] = el ? el.value.trim() : '';
+      }
+    }
+
     if (!vacancy) return details;
     const host = $('dynamicFields');
     for (const q of vacancy.questions || []) {
@@ -462,7 +582,9 @@
       'application/msword',
       'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
     ];
-    if (!allowed.includes(file.type)) { showError('Format CV harus PDF, DOC, atau DOCX.'); $('confirm').checked = false; return; }
+    const ext = (file.name.split('.').pop() || '').toLowerCase();
+    const isValidCv = allowed.includes(file.type) || ['pdf', 'doc', 'docx'].includes(ext);
+    if (!isValidCv) { showError('Format CV harus PDF, DOC, atau DOCX.'); $('confirm').checked = false; return; }
     if (!$('confirm').checked) { showError('Centang konfirmasi kebenaran data.'); return; }
 
     $('submitBtn').disabled = true;
@@ -471,10 +593,10 @@
     $('errorBox').style.display = 'none';
     try {
       const vacancy = selectedVacancy();
-      const city = $('city').value;
-      const district = city === 'Area lain' ? $('districtOther').value.trim() : $('district').value;
+      const city = $('city')?.value || '';
+      const district = city === 'Area lain' ? ($('districtOther')?.value.trim() || '') : ($('district')?.value || '');
       const details = collectDetails(vacancy);
-      const source = $('infoSource').value;
+      const source = $('infoSource')?.value || '';
       const scoring = calculateCandidateScore(vacancy || { name: $('position').value }, city, district, details);
 
       const payload = {
@@ -483,15 +605,18 @@
         name: $('name').value.trim(),
         city,
         district,
-        whatsapp: $('whatsapp').value.trim(),
+        whatsapp: $('whatsapp')?.value.trim() || '',
         details
       };
+      if (payload.name.length < 2) {
+        throw new Error('Nama lengkap minimal 2 karakter.');
+      }
 
-      const { supabase } = await import('../assets/js/supabase.js?v=20261122-lowongan-v1');
+      const { supabase } = await import('../assets/js/supabase.js?v=20261122-lowongan-v5');
       if (!supabase) throw new Error('Server belum terhubung.');
-      const ext = (file.name.split('.').pop() || '').toLowerCase();
+      const safeExt = ['pdf', 'doc', 'docx'].includes(ext) ? ext : 'pdf';
       const id = crypto.randomUUID();
-      const path = `stage1-cv/${id}/cv.${ext}`;
+      const path = `stage1-cv/${id}/cv.${safeExt}`;
       const { error: uploadError } = await supabase.storage
         .from('candidate-stage1-cv')
         .upload(path, file, { contentType: file.type || 'application/octet-stream', upsert: false });
@@ -500,13 +625,15 @@
       const { error: insertError } = await supabase.from('candidate_stage1_applications').insert({
         position: payload.position,
         full_name: payload.name,
-        city: payload.city,
-        district: payload.district,
-        whatsapp: payload.whatsapp,
-        source: payload.source,
+        city: payload.city || '',
+        district: payload.district || '',
+        whatsapp: payload.whatsapp || '',
+        source: payload.source || '',
+        recommendation: scoring.recommendation,
+        recommendation_notes: `Skor otomatis tahap 1: ${scoring.percentageScore}/100 (${scoring.totalScore}/${scoring.maxScore})`,
         experience_details: {
           ...payload.details,
-          sumber_informasi: payload.source,
+          ...(payload.source ? { sumber_informasi: payload.source } : {}),
           _scoring: scoring
         },
         cv_path: path,
@@ -515,19 +642,25 @@
       });
       if (insertError) throw insertError;
 
-      let cvUrl = '';
-      try {
-        const { data: signedData, error: signedError } = await supabase.storage
-          .from('candidate-stage1-cv')
-          .createSignedUrl(path, 604800);
-        if (signedError) throw signedError;
-        cvUrl = signedData?.signedUrl || '';
-      } catch (linkError) {
-        console.warn('Tautan CV WhatsApp tidak berhasil dibuat:', linkError);
+      let whatsappUrl = '';
+      if (scoring.recommended) {
+        let cvUrl = '';
+        try {
+          const { data: signedData, error: signedError } = await supabase.storage
+            .from('candidate-stage1-cv')
+            .createSignedUrl(path, 604800);
+          if (signedError) throw signedError;
+          cvUrl = signedData?.signedUrl || '';
+        } catch (linkError) {
+          console.warn('Tautan CV WhatsApp tidak berhasil dibuat:', linkError);
+        }
+        whatsappUrl = buildStage1WhatsAppUrl(payload, vacancy, scoring, file.name, cvUrl, id);
       }
 
-      const whatsappUrl = buildStage1WhatsAppUrl(payload, vacancy, scoring, file.name, cvUrl, id);
-      showResult({ status: 'TERKIRIM', whatsappUrl });
+      showResult({
+        recommended: scoring.recommended,
+        whatsappUrl
+      });
     } catch (err) {
       showError(err.message || 'File gagal diproses.');
       $('submitBtn').disabled = false;
@@ -540,19 +673,24 @@
   function showResult(res) {
     $('formArea').classList.add('hidden');
     $('resultArea').classList.remove('hidden');
-    $('resultStatus').textContent = 'DATA TERSIMPAN';
-    $('resultMessage').textContent = '';
-    if (res.status === 'TERKIRIM') {
-      $('resultTitle').textContent = 'Lamaran berhasil dikirim';
+    $('resultSymbol').textContent = '✓';
+    $('resultTitle').textContent = 'Lamaran berhasil dikirim';
+
+    if (res?.recommended && res?.whatsappUrl) {
+      $('resultStatus').textContent = 'DIREKOMENDASIKAN';
+      $('resultMessage').textContent = 'Anda memenuhi kriteria awal. Silakan lanjutkan konfirmasi ke WhatsApp HR.';
       $('waLink').href = res.whatsappUrl;
+      $('waLink').textContent = 'Konfirmasi ke WhatsApp HR · 08133193313';
       $('waLink').classList.remove('hidden');
     } else {
-      $('resultSymbol').textContent = '✓';
-      $('resultTitle').textContent = 'Lamaran tersimpan';
+      $('resultStatus').textContent = 'DATA TERSIMPAN';
+      $('resultMessage').textContent = 'Data lamaran Anda sudah tersimpan.';
+      $('waLink').removeAttribute('href');
+      $('waLink').classList.add('hidden');
     }
   }
 
-  await loadVacanciesAndSources();
+  await loadVacanciesAndSchema();
   document.documentElement.dataset.applyReady = 'true';
   showStep(0);
 </script></body></html>

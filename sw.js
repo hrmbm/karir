@@ -1,5 +1,5 @@
-/* Portal Karir app cache worker — version 20261122-lowongan-v1. */
-const BUILD = '20261122-lowongan-v1';
+/* Portal Karir app cache worker — version 20261122-lowongan-v5. */
+const BUILD = '20261122-lowongan-v5';
 const APP_ASSET_CACHE = `portal-karir-app-assets-${BUILD}`;
 const APP_CACHE_PREFIXES = ['portal-karir-app-assets-', 'portal-karir-app-shell-'];
 

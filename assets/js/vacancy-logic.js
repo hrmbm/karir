@@ -69,7 +69,9 @@ function makeQuestion(id, label, type, extra = {}) {
   };
 }
 
-const DEFAULT_PRIMARY_DISTRICTS = ['Pasuruan - Purwosari', 'Pasuruan - Purwodadi', 'Pasuruan - Sukorejo', 'Pasuruan - Pandaan', 'Pasuruan - Prigen'];
+export const RECOMMENDATION_THRESHOLD = 60;
+
+export const DEFAULT_PRIMARY_DISTRICTS = ['Pasuruan - Purwosari', 'Pasuruan - Purwodadi', 'Pasuruan - Sukorejo', 'Pasuruan - Pandaan', 'Pasuruan - Prigen'];
 
 export const DEFAULT_VACANCIES = [
   {
@@ -77,14 +79,14 @@ export const DEFAULT_VACANCIES = [
     name: 'Spray',
     active: true,
     primaryDistricts: [...DEFAULT_PRIMARY_DISTRICTS],
-    primaryLocationScore: 10,
+    primaryLocationScore: 20,
     otherLocationLabel: 'Area selain lokasi utama',
-    otherLocationScore: 5,
+    otherLocationScore: 10,
     questions: [
       makeQuestion('sprayType', 'Pernah nyepray apa?', 'dropdown', {
         options: [
-          { label: 'Kayu', score: 15 },
-          { label: 'Besi', score: 10 }
+          { label: 'Kayu', score: 35 },
+          { label: 'Besi', score: 20 }
         ]
       }),
       makeQuestion('company', 'Pengalamannya di mana?', 'text', {
@@ -93,13 +95,13 @@ export const DEFAULT_VACANCIES = [
       }),
       makeQuestion('duration', 'Berapa lama pengalaman?', 'dropdown', {
         options: [
-          { label: 'Lebih dari 6 bulan', score: 15 },
-          { label: 'Kurang dari 6 bulan', score: 5 }
+          { label: 'Lebih dari 6 bulan', score: 35 },
+          { label: 'Kurang dari 6 bulan', score: 15 }
         ]
       }),
       makeQuestion('explanation', 'Jelaskan pekerjaanmu ketika nyepray', 'textarea', {
         placeholder: 'Jenis material, proses, alat, dan pekerjaan yang biasa dilakukan',
-        filledScore: 5
+        filledScore: 10
       })
     ]
   },
@@ -108,15 +110,15 @@ export const DEFAULT_VACANCIES = [
     name: 'Las',
     active: true,
     primaryDistricts: [...DEFAULT_PRIMARY_DISTRICTS],
-    primaryLocationScore: 10,
+    primaryLocationScore: 20,
     otherLocationLabel: 'Area selain lokasi utama',
-    otherLocationScore: 5,
+    otherLocationScore: 10,
     questions: [
       makeQuestion('weldingType', 'Pernah menggunakan las apa?', 'dropdown', {
         options: [
-          { label: 'SMAW', score: 10 },
-          { label: 'GMAW', score: 15 },
-          { label: 'GTAW', score: 15 }
+          { label: 'SMAW', score: 20 },
+          { label: 'GMAW', score: 35 },
+          { label: 'GTAW', score: 35 }
         ]
       }),
       makeQuestion('company', 'Pengalamannya di mana?', 'text', {
@@ -125,13 +127,13 @@ export const DEFAULT_VACANCIES = [
       }),
       makeQuestion('duration', 'Berapa lama pengalaman?', 'dropdown', {
         options: [
-          { label: 'Lebih dari 6 bulan', score: 15 },
-          { label: 'Kurang dari 6 bulan', score: 5 }
+          { label: 'Lebih dari 6 bulan', score: 35 },
+          { label: 'Kurang dari 6 bulan', score: 15 }
         ]
       }),
       makeQuestion('explanation', 'Jelaskan pengalaman pengelasan', 'textarea', {
         placeholder: 'Material dan pekerjaan yang pernah dikerjakan',
-        filledScore: 5
+        filledScore: 10
       })
     ]
   },
@@ -140,13 +142,13 @@ export const DEFAULT_VACANCIES = [
     name: 'CNC',
     active: true,
     primaryDistricts: [...DEFAULT_PRIMARY_DISTRICTS],
-    primaryLocationScore: 10,
+    primaryLocationScore: 20,
     otherLocationLabel: 'Area selain lokasi utama',
-    otherLocationScore: 5,
+    otherLocationScore: 10,
     questions: [
       makeQuestion('cncMachine', 'Pernah mengoperasikan mesin CNC apa?', 'text', {
         placeholder: 'Jenis / merek / tipe mesin',
-        filledScore: 5
+        filledScore: 25
       }),
       makeQuestion('company', 'Pengalamannya di mana?', 'text', {
         placeholder: 'Nama perusahaan / tempat kerja',
@@ -154,13 +156,13 @@ export const DEFAULT_VACANCIES = [
       }),
       makeQuestion('duration', 'Berapa lama pengalaman?', 'dropdown', {
         options: [
-          { label: 'Lebih dari 6 bulan', score: 15 },
-          { label: 'Kurang dari 6 bulan', score: 5 }
+          { label: 'Lebih dari 6 bulan', score: 45 },
+          { label: 'Kurang dari 6 bulan', score: 15 }
         ]
       }),
       makeQuestion('explanation', 'Jelaskan pekerjaan CNC yang dikuasai', 'textarea', {
         placeholder: 'Mesin, setting, program, dan proses yang dikerjakan',
-        filledScore: 5
+        filledScore: 10
       })
     ]
   },
@@ -169,13 +171,13 @@ export const DEFAULT_VACANCIES = [
     name: 'Spindel Kayu',
     active: true,
     primaryDistricts: [...DEFAULT_PRIMARY_DISTRICTS],
-    primaryLocationScore: 10,
+    primaryLocationScore: 20,
     otherLocationLabel: 'Area selain lokasi utama',
-    otherLocationScore: 5,
+    otherLocationScore: 10,
     questions: [
       makeQuestion('spindleOperate', 'Pernah mengoperasikan & menyeting mesin spindel kayu?', 'dropdown', {
         options: [
-          { label: 'Ya', score: 20 },
+          { label: 'Ya', score: 40 },
           { label: 'Tidak', score: 0 }
         ]
       }),
@@ -185,13 +187,13 @@ export const DEFAULT_VACANCIES = [
       }),
       makeQuestion('duration', 'Berapa lama pengalaman?', 'dropdown', {
         options: [
-          { label: 'Lebih dari 6 bulan', score: 15 },
-          { label: 'Kurang dari 6 bulan', score: 5 }
+          { label: 'Lebih dari 6 bulan', score: 30 },
+          { label: 'Kurang dari 6 bulan', score: 10 }
         ]
       }),
       makeQuestion('explanation', 'Jelaskan bagaimana pekerjaan spindel dilakukan', 'textarea', {
         placeholder: 'Pengoperasian, setting, jenis produk, dan proses kerja',
-        filledScore: 5
+        filledScore: 10
       })
     ]
   },
@@ -200,21 +202,21 @@ export const DEFAULT_VACANCIES = [
     name: 'Maintenance',
     active: true,
     primaryDistricts: [...DEFAULT_PRIMARY_DISTRICTS],
-    primaryLocationScore: 10,
+    primaryLocationScore: 20,
     otherLocationLabel: 'Area selain lokasi utama',
-    otherLocationScore: 5,
+    otherLocationScore: 10,
     questions: [
       makeQuestion('maintenanceSkill', 'Bidang maintenance yang dikuasai?', 'checkbox', {
         options: [
-          { label: 'Listrik', score: 5 },
-          { label: 'Perbaikan Mesin', score: 5 },
-          { label: 'AC', score: 5 },
-          { label: 'Las', score: 5 }
+          { label: 'Listrik', score: 10 },
+          { label: 'Perbaikan Mesin', score: 10 },
+          { label: 'AC', score: 10 },
+          { label: 'Las', score: 10 }
         ]
       }),
       makeQuestion('woodIndustry', 'Punya pengalaman maintenance di pabrik kayu / mebel / furniture?', 'dropdown', {
         options: [
-          { label: 'Ya', score: 15 },
+          { label: 'Ya', score: 20 },
           { label: 'Tidak', score: 0 }
         ]
       }),
@@ -239,14 +241,14 @@ export const DEFAULT_VACANCIES = [
     name: 'OP. Produksi',
     active: true,
     primaryDistricts: [...DEFAULT_PRIMARY_DISTRICTS],
-    primaryLocationScore: 10,
+    primaryLocationScore: 20,
     otherLocationLabel: 'Area selain lokasi utama',
-    otherLocationScore: 5,
+    otherLocationScore: 10,
     questions: [
       makeQuestion('companyType', 'Jenis perusahaan tempat bekerja?', 'dropdown', {
         options: [
-          { label: 'Mebel / Kayu / Furniture', score: 15 },
-          { label: 'Perusahaan lain bukan Mebel / Kayu / Furniture', score: 5 }
+          { label: 'Mebel / Kayu / Furniture', score: 35 },
+          { label: 'Perusahaan lain bukan Mebel / Kayu / Furniture', score: 15 }
         ]
       }),
       makeQuestion('company', 'Pengalaman di perusahaan mana?', 'text', {
@@ -255,13 +257,13 @@ export const DEFAULT_VACANCIES = [
       }),
       makeQuestion('duration', 'Berapa lama pengalaman?', 'dropdown', {
         options: [
-          { label: 'Lebih dari 6 bulan', score: 15 },
-          { label: 'Kurang dari 6 bulan', score: 5 }
+          { label: 'Lebih dari 6 bulan', score: 35 },
+          { label: 'Kurang dari 6 bulan', score: 15 }
         ]
       }),
       makeQuestion('explanation', 'Jelaskan pengalaman pekerjaan produksi', 'textarea', {
         placeholder: 'Bagian produksi, mesin, target, atau proses yang dikerjakan',
-        filledScore: 5
+        filledScore: 10
       })
     ]
   }
@@ -416,9 +418,9 @@ export function createStarterVacancy(name = '', index = 0) {
     name: String(name).trim(),
     active: true,
     primaryDistricts: [...DEFAULT_PRIMARY_DISTRICTS],
-    primaryLocationScore: 10,
+    primaryLocationScore: 20,
     otherLocationLabel: 'Area selain lokasi utama',
-    otherLocationScore: 5,
+    otherLocationScore: 10,
     questions: [
       makeQuestion('company', 'Pengalamannya di mana?', 'text', {
         placeholder: 'Nama perusahaan / tempat kerja',
@@ -426,13 +428,13 @@ export function createStarterVacancy(name = '', index = 0) {
       }),
       makeQuestion('duration', 'Berapa lama pengalaman?', 'dropdown', {
         options: [
-          { label: 'Lebih dari 6 bulan', score: 15 },
-          { label: 'Kurang dari 6 bulan', score: 5 }
+          { label: 'Lebih dari 6 bulan', score: 60 },
+          { label: 'Kurang dari 6 bulan', score: 20 }
         ]
       }),
       makeQuestion('explanation', 'Jelaskan pengalaman kerja yang relevan', 'textarea', {
         placeholder: 'Uraikan tugas, alat, atau keahlian yang dikuasai',
-        filledScore: 5
+        filledScore: 20
       })
     ]
   }, index);
@@ -486,12 +488,32 @@ export function isPrimaryDistrictMatch(primaryDistricts = [], city = '', distric
   });
 }
 
+export function calculateVacancyMaxScore(vacancy) {
+  const v = normalizeVacancy(vacancy || {});
+  const maxLocationScore = Math.max(v.primaryLocationScore, v.otherLocationScore, 0);
+  let maxQuestionScore = 0;
+
+  for (const q of v.questions) {
+    if (q.type === 'dropdown' || q.type === 'radio') {
+      maxQuestionScore += q.options.length ? Math.max(...q.options.map(opt => opt.score), 0) : 0;
+    } else if (q.type === 'checkbox') {
+      for (const opt of q.options) {
+        if (opt.score > 0) maxQuestionScore += opt.score;
+      }
+    } else {
+      maxQuestionScore += Math.max(0, q.filledScore);
+    }
+  }
+
+  return Math.round((maxLocationScore + maxQuestionScore) * 100) / 100;
+}
+
 export function calculateCandidateScore(vacancy, city = '', district = '', answers = {}) {
   const v = normalizeVacancy(vacancy || {});
   const isPrimary = isPrimaryDistrictMatch(v.primaryDistricts, city, district);
   const locationType = isPrimary ? 'Lokasi Utama' : 'Lokasi Lain';
   const locationScore = isPrimary ? v.primaryLocationScore : v.otherLocationScore;
-  const maxLocationScore = Math.max(v.primaryLocationScore, v.otherLocationScore);
+  const maxLocationScore = Math.max(v.primaryLocationScore, v.otherLocationScore, 0);
 
   let questionScore = 0;
   let maxQuestionScore = 0;
@@ -532,12 +554,25 @@ export function calculateCandidateScore(vacancy, city = '', district = '', answe
     });
   }
 
+  const totalScore = Math.round((locationScore + questionScore) * 100) / 100;
+  const maxScore = Math.round((maxLocationScore + maxQuestionScore) * 100) / 100;
+  const percentageScore = maxScore > 0
+    ? Math.max(0, Math.round((totalScore / maxScore) * 10000) / 100)
+    : 0;
+  const threshold = RECOMMENDATION_THRESHOLD;
+  const recommended = maxScore > 0 && percentageScore >= threshold;
+  const recommendation = recommended ? 'Direkomendasikan' : 'Belum Ditentukan';
+
   return {
     locationType,
     locationScore,
-    questionScore,
-    totalScore: locationScore + questionScore,
-    maxScore: maxLocationScore + maxQuestionScore,
+    questionScore: Math.round(questionScore * 100) / 100,
+    totalScore,
+    maxScore,
+    percentageScore,
+    threshold,
+    recommended,
+    recommendation,
     questionBreakdown
   };
 }
